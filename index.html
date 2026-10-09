@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0}[hidden]{display:none!important}</style>
+<title>Order &amp; Payment Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one ledger page per company. Company switch on top, a four-figure position strip,
+   five tabs (client, products, advance, invoicing, dispatch), each tab = entry form + tables. */
+:root{
+  --bg:#f2f5f3; --surface:#ffffff; --ink:#15201c; --muted:#5a6a64; --line:#d6dfdb; --head:#e8eeeb;
+  --accent:#0e6b56; --accent-ink:#ffffff; --accent-soft:#dcefe8;
+  --ok:#1b7447; --ok-bg:#dcf1e4; --warn:#8f5405; --warn-bg:#fbefd5; --bad:#a8281f; --bad-bg:#fae3e0; --neutral-bg:#e8eeeb;
+  --font:'Schibsted Grotesk',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1411; --surface:#161f1b; --ink:#e5eee9; --muted:#97a8a1; --line:#28362f; --head:#1c2823;
+    --accent:#4cc4a0; --accent-ink:#07261d; --accent-soft:#183328;
+    --ok:#6fd49a; --ok-bg:#143325; --warn:#efb45a; --warn-bg:#3a2c11; --bad:#ff8d83; --bad-bg:#3b1a17; --neutral-bg:#1c2823;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1411; --surface:#161f1b; --ink:#e5eee9; --muted:#97a8a1; --line:#28362f; --head:#1c2823;
+  --accent:#4cc4a0; --accent-ink:#07261d; --accent-soft:#183328;
+  --ok:#6fd49a; --ok-bg:#143325; --warn:#efb45a; --warn-bg:#3a2c11; --bad:#ff8d83; --bad-bg:#3b1a17; --neutral-bg:#1c2823;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.45;padding-inline:16px;padding-block:20px 56px}
+.wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:24px;line-height:1.2;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:18px;margin:0;text-wrap:balance}
+h3{font-size:14px;margin:0}
+p{margin:0}
+.muted{color:var(--muted)}
+.top{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:flex-end;justify-content:space-between}
+.sync{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.bk{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cos{display:flex;flex-wrap:wrap;gap:8px}
+.co{font:inherit;font-weight:600;padding:10px 16px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;cursor:pointer;text-align:left;min-width:0}
+.co[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.kpi{background:var(--surface);padding:12px 16px;min-width:0}
+.kpi .l{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+.kpi .v{font-family:var(--mono);font-size:21px;font-weight:500;margin:2px 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.kpi .s{font-size:12px;color:var(--muted)}
+.tabs{display:flex;flex-wrap:wrap;gap:2px 6px;border-bottom:1px solid var(--line)}
+.tab{background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:10px 12px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab .c{font-family:var(--mono);font-size:11px;font-weight:500;background:var(--neutral-bg);color:var(--muted);border-radius:10px;padding:1px 7px;margin-left:6px}
+.ph{display:flex;flex-wrap:wrap;gap:10px 20px;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.ph>div{min-width:0;max-width:640px}
+.pt{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{font:inherit;font-weight:600;padding:8px 14px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.sm{padding:5px 10px;font-size:12px}
+.lnk{background:none;border:0;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:2px 6px}
+.lnk.del{color:var(--bad)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;min-width:0}
+input[type="search"]{width:220px;max-width:100%}
+input[type="checkbox"]{width:auto}
+textarea{resize:vertical}
+.form{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px;display:flex;flex-direction:column;gap:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px 14px}
+.f{min-width:0}
+.f label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px}
+.f small{display:block;color:var(--muted);font-size:12px;margin-top:3px;font-family:var(--mono)}
+.f.wide{grid-column:1/-1}
+.fa{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ferr{color:var(--bad);font-weight:600}
+.prev{display:flex;flex-wrap:wrap;gap:6px 28px;padding:10px 12px;background:var(--accent-soft);border-radius:6px}
+.pv .l{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+.pv .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:500}
+.block{margin-bottom:22px}
+.bh{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;margin-bottom:8px}
+.bh .cnt{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;font-weight:500}
+.bt{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.chk{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:max-content}
+th{background:var(--head);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:9px 12px;white-space:nowrap;font-weight:600;border-bottom:1px solid var(--line)}
+th.r{text-align:right}
+td{padding:8px 12px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--head)}
+td.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+td.mono{font-family:var(--mono)}
+td.wrap{white-space:normal;min-width:200px}
+td.act{text-align:right}
+tfoot td{background:var(--head);font-weight:600;border-top:1px solid var(--line);border-bottom:0}
+.chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.chip.bad{background:var(--bad-bg);color:var(--bad)}
+.chip.n0{background:var(--neutral-bg);color:var(--muted)}
+.sub{display:block;font-size:12px;color:var(--muted);font-family:var(--mono)}
+.bar{display:inline-block;width:84px;height:6px;border-radius:3px;background:var(--line);overflow:hidden;vertical-align:middle;margin-right:8px}
+.bar>i{display:block;height:100%;background:var(--accent)}
+.empty{border:1px dashed var(--line);border-radius:8px;padding:28px 20px;background:var(--surface)}
+.empty h3{font-size:15px;margin-bottom:4px}
+.note{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 14px;font-weight:500}
+.note .btn{color:var(--ink)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;max-width:calc(100% - 32px);z-index:10}
+@media (max-width:640px){
+  h1{font-size:21px}
+  .co{flex:1 1 100%}
+  .kpi .v{font-size:19px}
+  input[type="search"]{width:100%}
+  .pt{width:100%}
+}
+@media (prefers-reduced-motion:no-preference){
+  .btn,.co,.tab{transition:background-color .12s,border-color .12s,color .12s}
+}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Order &amp; Payment Desk</h1>
+      <p class="muted">Advance, invoicing and dispatch for each company, in one format.</p>
+    </div>
+    <div class="bk"><span id="sync" class="sync"></span><button class="btn sm" data-act="backup">Backup</button><button class="btn sm" data-act="restore">Restore</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
+  </header>
+  <nav id="cos" class="cos" aria-label="Company"></nav>
+  <div id="banner"></div>
+  <section id="kpis" class="kpis" aria-label="Current position"></section>
+  <div id="tabs" class="tabs" role="tablist" aria-label="Sections"></div>
+  <main id="panel"></main>
+</div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- constants ---------- */
+const COS=[{key:'si',name:'Sunshine Industries'},{key:'scp',name:'Sunshine Cosmetics Pvt Ltd'},{key:'di',name:'Dyana International'}];
+const SECS=['clients','products','advances','invoices','dispatches'];
+const TLAB={clients:'Client / Brand',products:'Products',advances:'Advance',invoices:'Daily Invoicing',dispatches:'Pending Dispatch'};
+const ADD={clients:'Add client',products:'Add product',advances:'Add advance received',invoices:'Add invoice',dispatches:'Log dispatch'};
+const INTRO={
+  clients:'The brands and companies you supply. Products, advances and invoices all sit under a client.',
+  products:'Final cost, advance per unit and payment terms for each product. Advance and invoices read from here.',
+  advances:'Advance received against each PO, in as many parts as it arrives. Required advance = PO quantity × advance per unit.',
+  invoices:'Each invoice takes cost and payment terms from the product, adds 18% GST and adjusts the advance already received for that PO.',
+  dispatches:'What is still to ship against each PO, and the dispatches already logged.'
+};
+const GST=0.18, TOL=1;
+
+/* ---------- helpers ---------- */
+const $=(s,r)=>(r||document).querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf2=new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const nf0=new Intl.NumberFormat('en-IN',{maximumFractionDigits:0});
+const inr=v=>'₹'+nf2.format(v||0);
+const qty=v=>nf0.format(v||0);
+const pct=v=>(Math.round(v*10)/10).toFixed(1)+'%';
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fd=s=>{if(!s)return '—';const p=s.split('-').map(Number);return String(p[2]).padStart(2,'0')+'-'+MON[p[1]-1]+'-'+String(p[0]).slice(2);};
+const addDays=(s,n)=>{const p=s.split('-').map(Number);return new Date(Date.UTC(p[0],p[1]-1,p[2]+n)).toISOString().slice(0,10);};
+const daysBetween=(a,b)=>{const x=a.split('-').map(Number),y=b.split('-').map(Number);return Math.round((Date.UTC(y[0],y[1]-1,y[2])-Date.UTC(x[0],x[1]-1,x[2]))/864e5);};
+const todayStr=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');};
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const byName=(a,b)=>String(a.name||'').localeCompare(String(b.name||''));
+const norm=s=>String(s||'').trim().toUpperCase();
+const gkey=(po,pid)=>norm(po)+'|'+pid;
+
+/* ---------- state ---------- */
+const S={co:'si',tab:'invoices',q:'',showDone:false,form:null,delArm:null,blocks:[]};
+const D={};
+COS.forEach(c=>{D[c.key]={};SECS.forEach(s=>{D[c.key][s]=new Map();});});
+let store=null, dl=null, R=null, delTimer=null, toastTimer=null;
+
+function loadUI(){try{const u=JSON.parse(localStorage.getItem('orderdesk:ui')||'{}');if(COS.some(c=>c.key===u.co))S.co=u.co;if(SECS.includes(u.tab))S.tab=u.tab;}catch(e){}}
+function saveUI(){try{localStorage.setItem('orderdesk:ui',JSON.stringify({co:S.co,tab:S.tab}));}catch(e){}}
+const lsKey=(k,s)=>'orderdesk:data:'+k+':'+s;
+function loadLocal(){COS.forEach(c=>SECS.forEach(s=>{try{JSON.parse(localStorage.getItem(lsKey(c.key,s))||'[]').forEach(r=>D[c.key][s].set(r.id,r));}catch(e){}}));}
+function saveLocal(k,s){try{localStorage.setItem(lsKey(k,s),JSON.stringify([...D[k][s].values()]));}catch(e){}}
+
+function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>{t.hidden=true;},3200);}
+
+/* ---------- storage ---------- */
+async function put(sec,row){
+  const k=S.co,id=row.id||uid();
+  const r=JSON.parse(JSON.stringify(Object.assign({},row,{id:id})));
+  const prev=D[k][sec].get(id);
+  D[k][sec].set(id,r);
+  if(store){
+    try{await store.collection(k+'_'+sec).doc(id).set(r);}
+    catch(e){if(prev)D[k][sec].set(id,prev);else D[k][sec].delete(id);refresh();toast('Could not save: '+((e&&(e.message||e.code))||'unknown error'));return false;}
+  }else{saveLocal(k,sec);}
+  refresh();return true;
+}
+async function del(sec,id){
+  const k=S.co,prev=D[k][sec].get(id);
+  D[k][sec].delete(id);
+  if(store){
+    try{await store.collection(k+'_'+sec).doc(id).delete();}
+    catch(e){if(prev)D[k][sec].set(id,prev);refresh();toast('Could not delete: '+((e&&(e.message||e.code))||'unknown error'));return false;}
+  }else{saveLocal(k,sec);}
+  refresh();return true;
+}
+
+/* ---------- calculations ---------- */
+function dataFor(key,over){
+  const d=D[key];
+  const o={clients:d.clients,products:d.products,advances:[...d.advances.values()],invoices:[...d.invoices.values()],dispatches:[...d.dispatches.values()]};
+  if(over){o[over.sec]=o[over.sec].filter(r=>r.id!==over.row.id);o[over.sec].push(over.row);}
+  return o;
+}
+function calc(d){
+  const P=d.products,C=d.clients;
+  const prod=id=>P.get(id)||null;
+  const cli=p=>p?(C.get(p.clientId)||null):null;
+  const srt=(a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.id||'').localeCompare(String(b.id||''));
+  const groups=new Map();
+  const G=(po,pid)=>{const k=gkey(po,pid);let g=groups.get(k);if(!g){g={k:k,po:String(po||'').trim(),pid:pid,poQty:0,poRate:0,received:0,invQty:0,adjusted:0,dispQty:0,hasAdv:false};groups.set(k,g);}return g;};
+
+  const adv=[...d.advances].sort(srt);
+  adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;});
+
+  const inv=[...d.invoices].sort(srt).map(i=>{
+    const p=prod(i.productId),g=G(i.po,i.productId);
+    const q=+i.qty||0,cost=p?+p.cost||0:0,au=p?+p.advPerUnit||0:0;
+    g.invQty+=q;
+    const nonGst=q*cost,extra=+i.extra||0,gst=(nonGst+extra)*GST,total=nonGst+extra+gst;
+    const avail=Math.max(0,g.received-g.adjusted);
+    const adj=Math.min(q*au,nonGst,avail);
+    g.adjusted+=adj;
+    const net=total-adj,paid=+i.paid||0,pend=Math.max(0,net-paid);
+    const due=i.date?addDays(i.date,p?+p.terms||0:0):'';
+    return Object.assign({},i,{p:p,c:cli(p),g:g,q:q,nonGst:nonGst,extra:extra,gst:gst,total:total,adj:adj,net:net,paid:paid,pend:pend,due:due,
+      remain:g.poQty>0?g.poQty-g.invQty:null,advLeft:g.received-g.adjusted,
+      status:pend<=TOL?'Paid':(paid>0?'Partial':'Unpaid')});
+  });
+
+  const dis=[...d.dispatches].sort(srt).map(x=>{const p=prod(x.productId),g=G(x.po,x.productId);const q=+x.qty||0;g.dispQty+=q;return Object.assign({},x,{p:p,c:cli(p),q:q});});
+
+  groups.forEach(g=>{
+    const p=prod(g.pid);
+    g.p=p;g.c=cli(p);g.advUnit=p?+p.advPerUnit||0:0;
+    g.required=g.poQty*g.advUnit;g.orderValue=g.poQty*g.poRate;
+    g.pending=Math.max(0,g.required-g.received);g.excess=Math.max(0,g.received-g.required);
+    g.recvPct=g.required>0?g.received/g.required*100:null;
+    g.unadj=g.received-g.adjusted;
+    g.pendDisp=g.poQty>0?Math.max(0,g.poQty-g.dispQty):null;
+    g.ready=Math.max(0,g.invQty-g.dispQty);
+  });
+
+  const run=new Map();
+  const advRows=adv.map(a=>{
+    const g=groups.get(gkey(a.po,a.productId));
+    const cum=(run.get(g.k)||0)+(+a.received||0);run.set(g.k,cum);
+    const req=g.required;
+    return Object.assign({},a,{p:g.p,c:g.c,g:g,req:req,pctThis:req>0?(+a.received||0)/req*100:null,cum:cum,pendAfter:Math.max(0,req-cum),pendPct:req>0?Math.max(0,req-cum)/req*100:null});
+  });
+
+  const gl=[...groups.values()];
+  const sum=(arr,f)=>arr.reduce((s,x)=>s+(f(x)||0),0);
+  const today=todayStr();
+  const t={
+    advReceived:sum(advRows,r=>+r.received),
+    advPending:sum(gl.filter(g=>g.hasAdv),g=>g.pending),
+    outstanding:sum(inv,i=>i.pend),
+    overdue:inv.filter(i=>i.pend>TOL&&i.due&&daysBetween(today,i.due)<0).length,
+    toDispatch:sum(gl,g=>g.pendDisp||0),
+    ready:sum(gl,g=>g.ready),
+    openPOs:gl.filter(g=>g.pendDisp>0).length,
+    poCount:gl.filter(g=>g.hasAdv).length
+  };
+  return {groups:gl,advRows:advRows,inv:inv,dis:dis,t:t};
+}
+function recompute(){R=calc(dataFor(S.co));}
+
+/* ---------- column / block specs ---------- */
+const cl=r=>r.c?r.c.name:'—';
+const pr=r=>r.p?r.p.name:'(removed product)';
+function chip(cls,txt){return '<span class="chip '+cls+'">'+esc(txt)+'</span>';}
+
+function blocks(){
+  const d=D[S.co],today=todayStr(),t=S.tab;
+  const cn=id=>{const c=d.clients.get(id);return c?c.name:'—';};
+  if(t==='clients'){
+    const cnt=id=>[...d.products.values()].filter(p=>p.clientId===id).length;
+    return [{id:'clients',name:'clients',title:'Clients',edit:'clients',rows:[...d.clients.values()].sort(byName),
+      cols:[{h:'Client',t:r=>r.name,r:r=>'<strong>'+esc(r.name)+'</strong>'},{h:'Brand',t:r=>r.brand},{h:'GSTIN',t:r=>r.gstin,cls:'mono'},
+        {h:'Contact person',t:r=>r.contact},{h:'Phone',t:r=>r.phone},{h:'City',t:r=>r.city},{h:'Products',t:r=>cnt(r.id),cls:'n',fmt:qty},
+        {h:'Notes',t:r=>r.notes,cls:'wrap'}],
+      empty:['No clients yet','Add the companies and brands you supply. Everything else is entered against a client.']}];
+  }
+  if(t==='products'){
+    return [{id:'products',name:'products',title:'Products',edit:'products',
+      rows:[...d.products.values()].sort((a,b)=>cn(a.clientId).localeCompare(cn(b.clientId))||byName(a,b)),
+      cols:[{h:'Client',t:r=>cn(r.clientId)},{h:'Product',t:r=>r.name,r:r=>'<strong>'+esc(r.name)+'</strong>'},
+        {h:'Final cost / unit',t:r=>+r.cost||0,cls:'n',fmt:inr},{h:'Advance / unit',t:r=>+r.advPerUnit||0,cls:'n',fmt:inr},
+        {h:'Advance %',t:r=>r.cost>0?r.advPerUnit/r.cost*100:null,cls:'n',fmt:pct},
+        {h:'Payment terms (days)',t:r=>+r.terms||0,cls:'n',fmt:qty}],
+      empty:['No products yet','Add each product with its final cost, advance per unit and payment terms.']}];
+  }
+  if(t==='advances'){
+    const chipAdv=g=>g.required<=0?chip('n0','No advance set'):(g.pending<=TOL?(g.excess>TOL?chip('warn','Excess '+inr(g.excess)):chip('ok','Complete')):chip('warn','Pending'));
+    return [
+      {id:'adv-summary',name:'advance position by PO',title:'Advance position by PO',rows:R.groups.filter(g=>g.hasAdv).sort((a,b)=>cl(a).localeCompare(cl(b))||pr(a).localeCompare(pr(b))||a.po.localeCompare(b.po)),
+        cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
+          {h:'Order value',t:r=>r.orderValue,cls:'n',fmt:inr},{h:'Advance required',t:r=>r.required,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.received,cls:'n',fmt:inr,s:1},
+          {h:'Pending',t:r=>r.pending,cls:'n',fmt:inr,s:1},{h:'Received %',t:r=>r.recvPct,cls:'n',fmt:pct},
+          {h:'Adjusted in invoices',t:r=>r.adjusted,cls:'n',fmt:inr,s:1},{h:'Not yet adjusted',t:r=>r.unadj,cls:'n',fmt:inr,s:1},
+          {h:'Status',t:r=>r.required<=0?'No advance set':(r.pending<=TOL?(r.excess>TOL?'Excess':'Complete'):'Pending'),r:chipAdv}],
+        empty:['No advance recorded','Once you log advance received, each PO shows what is required, received and still pending here.']},
+      {id:'adv-log',name:'advance received',title:'Advance received',edit:'advances',search:1,rows:R.advRows,
+        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'PO qty',t:r=>+r.poQty||0,cls:'n',fmt:qty},
+          {h:'Advance required',t:r=>r.req,cls:'n',fmt:inr},{h:'Received',t:r=>+r.received||0,cls:'n',fmt:inr,s:1},{h:'% of required',t:r=>r.pctThis,cls:'n',fmt:pct},
+          {h:'Pending as of this date',t:r=>r.pendPct==null?'':(r.pendAfter<=TOL?'Fully paid':pct(r.pendPct)+' pending'),
+            r:r=>r.pendPct==null?'—':(r.pendAfter<=TOL?chip('ok','Fully paid'):chip('warn',pct(r.pendPct)+' pending')+'<span class="sub">'+inr(r.pendAfter)+'</span>')},
+          {h:'Note',t:r=>r.note,cls:'wrap'}],
+        empty:['No advance entries yet','Log each part payment against its PO as it arrives. The pending share is worked out as of each date.']}
+    ];
+  }
+  if(t==='invoices'){
+    return [{id:'invoices',name:'invoices',title:'Invoices',edit:'invoices',search:1,rows:R.inv,
+      cols:[{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},
+        {h:'PO number',t:r=>r.po,cls:'mono'},{h:'Invoice qty',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'PO qty',t:r=>r.g.poQty||null,cls:'n',fmt:qty},
+        {h:'Remaining qty',t:r=>r.remain,cls:'n',fmt:qty,r:r=>r.remain==null?'—':(r.remain<0?esc(qty(r.remain))+' '+chip('bad','Over PO'):esc(qty(r.remain)))},
+        {h:'Non-GST amount',t:r=>r.nonGst,cls:'n',fmt:inr,s:1},{h:'Freight + dev. charges',t:r=>r.extra,cls:'n',fmt:inr,s:1},{h:'GST 18%',t:r=>r.gst,cls:'n',fmt:inr,s:1},
+        {h:'Invoice total',t:r=>r.total,cls:'n',fmt:inr,s:1},{h:'Advance adjusted',t:r=>r.adj,cls:'n',fmt:inr,s:1},{h:'Advance left on PO',t:r=>r.advLeft,cls:'n',fmt:inr},
+        {h:'Net receivable',t:r=>r.net,cls:'n',fmt:inr,s:1},
+        {h:'Due date',t:r=>r.due,r:r=>{if(!r.due)return '—';const dd=daysBetween(today,r.due);return esc(fd(r.due))+(r.pend>TOL?(dd<0?' '+chip('bad',(-dd)+'d overdue'):' '+chip('n0','in '+dd+'d')):'');}},
+        {h:'Payment received',t:r=>r.paid,cls:'n',fmt:inr,s:1},{h:'Pending amount',t:r=>r.pend,cls:'n',fmt:inr,s:1},
+        {h:'Status',t:r=>r.status,r:r=>chip(r.status==='Paid'?'ok':(r.status==='Partial'?'warn':'bad'),r.status)}],
+      empty:['No invoices yet','Add the first invoice. GST, due date and advance adjustment are worked out from the product and PO details.']}];
+  }
+  /* dispatches */
+  const done=g=>g.poQty>0&&g.dispQty>=g.poQty;
+  const gl=R.groups.filter(g=>S.showDone||!done(g)).sort((a,b)=>(b.ready-a.ready)||((b.pendDisp||0)-(a.pendDisp||0)));
+  const chipD=g=>g.poQty<=0?chip('n0','PO qty not recorded'):(g.dispQty>g.poQty?chip('bad','Over-dispatched'):(done(g)?chip('ok','Complete'):(g.dispQty>g.invQty?chip('warn','Dispatched > invoiced'):(g.ready>0?chip('warn','Ready to ship'):chip('n0',g.invQty>0?'Awaiting next invoice':'Not invoiced')))));
+  return [
+    {id:'disp-summary',name:'pending dispatch',title:'Pending dispatch by PO',rows:gl,
+      extra:'<label class="chk"><input type="checkbox" id="showdone"'+(S.showDone?' checked':'')+'> Show completed POs</label>',
+      cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'PO qty',t:r=>r.poQty||null,cls:'n',fmt:qty},{h:'Invoiced',t:r=>r.invQty,cls:'n',fmt:qty},
+        {h:'Dispatched',t:r=>r.dispQty,cls:'n',fmt:qty},{h:'Pending dispatch',t:r=>r.pendDisp,cls:'n',fmt:qty,s:1},{h:'Invoiced, not dispatched',t:r=>r.ready,cls:'n',fmt:qty,s:1},
+        {h:'Dispatched share',t:r=>r.poQty>0?r.dispQty/r.poQty*100:null,r:r=>{if(!(r.poQty>0))return '—';const p=Math.min(100,r.dispQty/r.poQty*100);return '<span class="bar"><i style="width:'+p+'%"></i></span>'+esc(pct(r.dispQty/r.poQty*100));}},
+        {h:'Status',t:r=>r.poQty<=0?'PO qty not recorded':(r.dispQty>r.poQty?'Over-dispatched':(done(r)?'Complete':(r.ready>0?'Ready to ship':'Awaiting invoice'))),r:chipD}],
+      empty:['Nothing pending','Every PO with a recorded quantity has been dispatched, or no PO has been entered yet. Add advance or invoices first.']},
+    {id:'disp-log',name:'dispatch log',title:'Dispatch log',edit:'dispatches',search:1,rows:R.dis,
+      cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'Invoice no.',t:r=>r.invNo,cls:'mono'},
+        {h:'Qty dispatched',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'Transporter',t:r=>r.transporter},{h:'LR / AWB no.',t:r=>r.lr,cls:'mono'},
+        {h:'Status',t:r=>r.status,r:r=>chip(r.status==='Delivered'?'ok':'warn',r.status||'Dispatched')}],
+      empty:['No dispatches logged','Log each dispatch with its transporter and LR number. Pending quantities above update as you go.']}
+  ];
+}
+
+/* ---------- rendering ---------- */
+function cellHTML(c,r){
+  if(c.r)return c.r(r);
+  const v=c.t(r);
+  if(v==null||v==='')return '—';
+  return esc(c.fmt?c.fmt(v):v);
+}
+function filtered(b){
+  if(b.search&&S.q){const q=S.q.toLowerCase();return b.rows.filter(r=>b.cols.some(c=>String(c.t(r)==null?'':c.t(r)).toLowerCase().includes(q)));}
+  return b.rows;
+}
+function blockHTML(b){
+  const rows=filtered(b);
+  const cnt=rows.length+(rows.length!==b.rows.length?' of '+b.rows.length:'');
+  let h='<section class="block"><div class="bh"><h3>'+esc(b.title)+'<span class="cnt">'+cnt+'</span></h3><div class="bt">'+(b.extra||'')+
+    (dl&&b.rows.length?'<button class="btn sm" data-act="csv" data-b="'+b.id+'">Export CSV</button>':'')+'</div></div>';
+  if(!b.rows.length){return h+'<div class="empty"><h3>'+esc(b.empty[0])+'</h3><p class="muted">'+esc(b.empty[1])+'</p></div></section>';}
+  if(!rows.length){return h+'<div class="empty"><h3>No rows match</h3><p class="muted">Clear the search to see every row.</p></div></section>';}
+  h+='<div class="tw"><table><thead><tr>'+b.cols.map(c=>'<th class="'+(c.cls==='n'?'r':'')+'">'+esc(c.h)+'</th>').join('')+(b.edit?'<th></th>':'')+'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    h+='<tr>'+b.cols.map(c=>'<td class="'+(c.cls||'')+'">'+cellHTML(c,r)+'</td>').join('');
+    if(b.edit)h+='<td class="act"><button class="lnk" data-act="edit" data-sec="'+b.edit+'" data-id="'+esc(r.id)+'">Edit</button><button class="lnk del" data-act="del" data-sec="'+b.edit+'" data-id="'+esc(r.id)+'">'+(S.delArm===r.id?'Confirm delete':'Delete')+'</button></td>';
+    h+='</tr>';
+  });
+  h+='</tbody>';
+  if(b.cols.some(c=>c.s)){
+    h+='<tfoot><tr>'+b.cols.map((c,i)=>{if(i===0)return '<td>Total</td>';if(!c.s)return '<td></td>';const s=rows.reduce((a,r)=>a+(+c.t(r)||0),0);return '<td class="n">'+esc(c.fmt(s))+'</td>';}).join('')+(b.edit?'<td></td>':'')+'</tr></tfoot>';
+  }
+  return h+'</table></div></section>';
+}
+function renderList(){
+  const host=$('#listHost');if(!host)return;
+  S.blocks=blocks();
+  host.innerHTML=S.blocks.map(blockHTML).join('');
+}
+function renderCos(){
+  $('#cos').innerHTML=COS.map(c=>'<button class="co" data-act="co" data-co="'+c.key+'" aria-pressed="'+(c.key===S.co)+'">'+esc(c.name)+'</button>').join('');
+}
+function renderKpis(){
+  const t=R.t;
+  const k=(l,v,s)=>'<div class="kpi"><div class="l">'+l+'</div><div class="v">'+esc(v)+'</div><div class="s">'+esc(s)+'</div></div>';
+  $('#kpis').innerHTML=
+    k('Advance received',inr(t.advReceived),t.poCount+(t.poCount===1?' PO':' POs')+' with advance')+
+    k('Advance pending',inr(t.advPending),'required minus received')+
+    k('Outstanding receivable',inr(t.outstanding),t.overdue+(t.overdue===1?' invoice':' invoices')+' overdue')+
+    k('Yet to dispatch',qty(t.toDispatch)+' units',qty(t.ready)+' invoiced, not dispatched');
+}
+function renderTabs(){
+  const d=D[S.co];
+  const cnt={clients:d.clients.size,products:d.products.size,advances:d.advances.size,invoices:d.invoices.size,dispatches:R.t.openPOs};
+  $('#tabs').innerHTML=SECS.map(s=>'<button class="tab" role="tab" data-act="tab" data-tab="'+s+'" aria-selected="'+(s===S.tab)+'">'+TLAB[s]+'<span class="c">'+cnt[s]+'</span></button>').join('');
+}
+function renderBanner(){
+  const d=D[S.co];let n=0;SECS.forEach(s=>d[s].forEach(r=>{if(r.sample)n++;}));
+  $('#banner').innerHTML=n?'<div class="note"><span>Example rows from your payment sheet are loaded for this company, so you can see how it works.</span><button class="btn sm" data-act="clearsample">Clear example rows</button></div>':'';
+}
+function renderSync(){
+  $('#sync').textContent='Saved in this browser only. Use Backup to move it.';
+}
+function refresh(){recompute();renderKpis();renderTabs();renderBanner();renderList();}
+function buildAll(){recompute();renderCos();renderKpis();renderTabs();renderBanner();buildPanel();renderSync();}
+
+function buildPanel(){
+  const t=S.tab;
+  $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
+    (S.blocks&&(t==='advances'||t==='invoices'||t==='dispatches')?'<input id="q" type="search" placeholder="Search rows" aria-label="Search rows" value="'+esc(S.q)+'">':'')+
+    '<button class="btn primary" data-act="add">'+ADD[t]+'</button></div></div><div id="formHost"></div><div id="listHost"></div>';
+  if(S.form&&S.form.sec===t)showForm();
+  renderList();
+}
+
+/* ---------- forms ---------- */
+const fld=(id,label,type,val,attrs,hint)=>'<div class="f"><label for="'+id+'">'+label+'</label><input id="'+id+'" type="'+type+'" value="'+esc(val)+'" '+(attrs||'')+'>'+(hint?'<small id="'+id+'_h"></small>':'')+'</div>';
+const sel=(id,label,opts,val)=>'<div class="f"><label for="'+id+'">'+label+'</label><select id="'+id+'">'+opts.map(o=>'<option value="'+esc(o.v)+'"'+(o.v===val?' selected':'')+'>'+esc(o.t)+'</option>').join('')+'</select></div>';
+const area=(id,label,val)=>'<div class="f wide"><label for="'+id+'">'+label+'</label><textarea id="'+id+'" rows="2">'+esc(val)+'</textarea></div>';
+const acts='<div class="fa"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-act="cancel">Cancel</button><span id="ferr" class="ferr" role="alert"></span></div>';
+const wrapForm=(title,inner,prev)=>'<form id="frm" class="form" novalidate><h3>'+title+'</h3><div class="grid">'+inner+'</div>'+(prev?'<div id="prev" class="prev" aria-live="polite"></div>':'')+acts+'</form>';
+const NUM='inputmode="decimal" step="any" min="0"';
+
+function chainHTML(r){
+  const d=D[S.co],p=r&&r.productId?d.products.get(r.productId):null;
+  const clients=[...d.clients.values()].sort(byName);
+  return sel('f_client','Client *',[{v:'',t:'Select client'}].concat(clients.map(c=>({v:c.id,t:c.name+(c.brand?' · '+c.brand:'')}))),p?p.clientId:'')+
+    sel('f_product','Product *',[{v:'',t:'Select product'}],'')+
+    '<div class="f"><label for="f_po">PO number *</label><input id="f_po" list="pos" autocomplete="off" value="'+esc(r&&r.po)+'"><datalist id="pos"></datalist></div>';
+}
+const FORMS={
+  clients:r=>{r=r||{};return wrapForm(r.id?'Edit client':'New client',
+    fld('c_name','Client name *','text',r.name,'autocomplete="off"')+fld('c_brand','Brand','text',r.brand)+fld('c_gstin','GSTIN','text',r.gstin,'maxlength="15"')+
+    fld('c_contact','Contact person','text',r.contact)+fld('c_phone','Phone','text',r.phone)+fld('c_email','Email','email',r.email)+fld('c_city','City','text',r.city)+
+    area('c_addr','Address',r.address)+area('c_notes','Notes',r.notes));},
+  products:r=>{r=r||{};const clients=[...D[S.co].clients.values()].sort(byName);
+    return wrapForm(r.id?'Edit product':'New product',
+      sel('p_client','Client *',[{v:'',t:'Select client'}].concat(clients.map(c=>({v:c.id,t:c.name}))),r.clientId||(clients.length===1?clients[0].id:''))+
+      fld('p_name','Product name *','text',r.name,'autocomplete="off"')+
+      fld('p_cost','Final cost per unit (₹) *','number',r.cost==null?'':r.cost,NUM)+
+      fld('p_adv','Advance per unit (₹) *','number',r.advPerUnit==null?'':r.advPerUnit,NUM,1)+
+      fld('p_terms','Payment terms (days)','number',r.terms==null?30:r.terms,'inputmode="numeric" step="1" min="0"'));},
+  advances:r=>{r=r||{};return wrapForm(r.id?'Edit advance entry':'New advance received',
+    chainHTML(r)+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
+    fld('a_rate','PO rate (₹ per unit) *','number',r.poRate==null?'':r.poRate,NUM)+fld('a_recv','Advance received (₹) *','number',r.received==null?'':r.received,NUM)+
+    area('a_note','Note',r.note),true);},
+  invoices:r=>{r=r||{};return wrapForm(r.id?'Edit invoice':'New invoice',
+    chainHTML(r)+fld('i_no','Invoice number *','text',r.invNo,'autocomplete="off"')+fld('i_date','Invoice date *','date',r.date||todayStr())+
+    fld('i_qty','Invoice quantity *','number',r.qty==null?'':r.qty,NUM)+fld('i_extra','Freight + development charges (₹)','number',r.extra==null?'':r.extra,NUM)+
+    fld('i_paid','Payment received (₹)','number',r.paid==null?'':r.paid,NUM),true);},
+  dispatches:r=>{r=r||{};return wrapForm(r.id?'Edit dispatch':'Log dispatch',
+    chainHTML(r)+fld('d_date','Dispatch date *','date',r.date||todayStr())+fld('d_qty','Quantity dispatched *','number',r.qty==null?'':r.qty,NUM)+
+    fld('d_inv','Invoice number','text',r.invNo)+fld('d_trans','Transporter / courier','text',r.transporter)+fld('d_lr','LR / AWB number','text',r.lr)+
+    sel('d_status','Status',[{v:'Dispatched',t:'Dispatched'},{v:'In transit',t:'In transit'},{v:'Delivered',t:'Delivered'}],r.status||'Dispatched'),true);}
+};
+function prereq(t){
+  const d=D[S.co];
+  if(t==='products'&&!d.clients.size)return {msg:'Add a client first, then you can add its products.',tab:'clients',btn:'Go to Client / Brand'};
+  if((t==='advances'||t==='invoices'||t==='dispatches')&&!d.products.size)return {msg:d.clients.size?'Add at least one product first. Advance, invoices and dispatch are all entered against a product.':'Add a client and its products first. Advance, invoices and dispatch are entered against a product.',tab:d.clients.size?'products':'clients',btn:d.clients.size?'Go to Products':'Go to Client / Brand'};
+  return null;
+}
+function showForm(){
+  const t=S.form.sec,fh=$('#formHost');
+  const row=S.form.id?D[S.co][t].get(S.form.id):null;
+  const miss=prereq(t);
+  if(miss){fh.innerHTML='<div class="form"><p>'+miss.msg+'</p><div class="fa"><button class="btn primary" data-act="goto" data-tab="'+miss.tab+'">'+miss.btn+'</button><button class="btn" data-act="cancel">Close</button></div></div>';return;}
+  fh.innerHTML=FORMS[t](row);
+  bindForm(t,row);
+  const f=$('#frm');const first=f.querySelector('input,select');if(first)first.focus();
+}
+const val=id=>{const e=document.getElementById(id);return e?String(e.value||'').trim():'';};
+const num=id=>{const v=parseFloat(val(id));return isNaN(v)?0:v;};
+const pv=(l,v)=>'<div class="pv"><span class="l">'+l+'</span><span class="v">'+esc(v)+'</span></div>';
+
+function chain(row){
+  const cs=$('#f_client'),ps=$('#f_product'),dlist=$('#pos'),d=D[S.co];
+  const clients=[...d.clients.values()];
+  if(!cs.value&&clients.length===1)cs.value=clients[0].id;
+  function fillProducts(sel){
+    const list=[...d.products.values()].filter(p=>p.clientId===cs.value).sort(byName);
+    ps.innerHTML='<option value="">Select product</option>'+list.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+    if(sel&&list.some(p=>p.id===sel))ps.value=sel;else if(list.length===1)ps.value=list[0].id;
+  }
+  function fillPOs(){
+    const pid=ps.value;
+    dlist.innerHTML=R.groups.filter(g=>g.pid===pid).map(g=>'<option value="'+esc(g.po)+'"></option>').join('');
+  }
+  cs.addEventListener('change',()=>{fillProducts();fillPOs();});
+  ps.addEventListener('change',fillPOs);
+  fillProducts(row&&row.productId);fillPOs();
+}
+function findGroup(res,po,pid){return res.groups.find(g=>g.k===gkey(po,pid));}
+function sim(sec,row){return calc(dataFor(S.co,{sec:sec,row:row}));}
+const draftId=()=>S.form.id||'zzzz-draft';
+
+const PREV={
+  advances:()=>{
+    const el=$('#prev'),pid=val('f_product'),po=val('f_po'),pq=num('a_qty');
+    if(!pid||!po||!pq){el.innerHTML='<span class="muted">Pick the product, then enter the PO number and quantity to see the advance position.</span>';return;}
+    const row={id:draftId(),date:val('a_date')||todayStr(),productId:pid,po:po,poQty:pq,poRate:num('a_rate'),received:num('a_recv'),note:''};
+    const g=findGroup(sim('advances',row),po,pid);
+    if(!g||g.advUnit<=0){el.innerHTML='<span class="muted">This product has no advance per unit set. Edit the product first.</span>';return;}
+    el.innerHTML=pv('Advance required',inr(g.required))+pv('Received incl. this entry',inr(g.received))+pv('Still pending',inr(g.pending))+(g.excess>TOL?pv('Excess received',inr(g.excess)):'');
+  },
+  invoices:()=>{
+    const el=$('#prev'),pid=val('f_product'),po=val('f_po'),q=num('i_qty');
+    if(!pid||!po||!q){el.innerHTML='<span class="muted">Pick the product, then enter the PO number and quantity to see the invoice amounts.</span>';return;}
+    const row={id:draftId(),date:val('i_date')||todayStr(),invNo:val('i_no'),productId:pid,po:po,qty:q,extra:num('i_extra'),paid:num('i_paid')};
+    const res=sim('invoices',row),i=res.inv.find(x=>x.id===row.id);
+    if(!i)return;
+    el.innerHTML=pv('Invoice total incl. GST',inr(i.total))+pv('Advance adjusted',inr(i.adj))+pv('Net receivable',inr(i.net))+
+      (i.remain==null?pv('PO qty remaining','No PO qty recorded'):pv('PO qty remaining after this',qty(i.remain)))+pv('Due date',fd(i.due));
+  },
+  dispatches:()=>{
+    const el=$('#prev'),pid=val('f_product'),po=val('f_po'),q=num('d_qty');
+    if(!pid||!po||!q){el.innerHTML='<span class="muted">Pick the product, then enter the PO number and quantity to see what stays pending.</span>';return;}
+    const row={id:draftId(),date:val('d_date')||todayStr(),productId:pid,po:po,qty:q,invNo:'',transporter:'',lr:'',status:'Dispatched'};
+    const g=findGroup(sim('dispatches',row),po,pid);
+    if(!g)return;
+    el.innerHTML=pv('PO qty',g.poQty>0?qty(g.poQty):'Not recorded')+pv('Invoiced',qty(g.invQty))+pv('Dispatched incl. this',qty(g.dispQty))+
+      (g.pendDisp==null?'':pv('Still pending dispatch',qty(g.pendDisp)))+(g.dispQty>g.invQty?pv('Warning','Dispatched more than invoiced'):'');
+  }
+};
+function bindForm(t,row){
+  const f=$('#frm');
+  f.addEventListener('submit',onSubmit);
+  if(t==='advances'||t==='invoices'||t==='dispatches'){
+    chain(row);
+    const p=PREV[t];
+    f.addEventListener('input',p);
+    f.addEventListener('change',e=>{
+      if(t==='advances'&&(e.target.id==='f_po'||e.target.id==='f_product')){
+        const g=findGroup(R,val('f_po'),val('f_product'));
+        if(g){if(!val('a_qty'))$('#a_qty').value=g.poQty||'';if(!val('a_rate')&&g.poRate)$('#a_rate').value=g.poRate;}
+      }
+      p();
+    });
+    p();
+  }
+  if(t==='products'){
+    const u=()=>{const c=num('p_cost'),a=num('p_adv'),h=$('#p_adv_h');if(h)h.textContent=c>0?pct(a/c*100)+' of final cost':'';};
+    f.addEventListener('input',u);u();
+  }
+}
+function readForm(sec){
+  const id=S.form.id||undefined;
+  if(sec==='clients'){
+    const name=val('c_name');if(!name)return {err:'Client name is required.'};
+    return {row:{id:id,name:name,brand:val('c_brand'),gstin:val('c_gstin').toUpperCase(),contact:val('c_contact'),phone:val('c_phone'),email:val('c_email'),city:val('c_city'),address:val('c_addr'),notes:val('c_notes')}};
+  }
+  if(sec==='products'){
+    const clientId=val('p_client'),name=val('p_name'),cost=num('p_cost'),adv=num('p_adv');
+    if(!clientId)return {err:'Select the client.'};
+    if(!name)return {err:'Product name is required.'};
+    if(!(cost>0))return {err:'Enter the final cost per unit.'};
+    if(adv>cost)return {err:'Advance per unit cannot be more than the final cost.'};
+    const dup=[...D[S.co].products.values()].some(p=>p.id!==id&&p.clientId===clientId&&norm(p.name)===norm(name));
+    if(dup)return {err:'This client already has a product with that name.'};
+    return {row:{id:id,clientId:clientId,name:name,cost:cost,advPerUnit:adv,terms:Math.max(0,parseInt(val('p_terms'),10)||0)}};
+  }
+  const pid=val('f_product'),po=val('f_po');
+  if(!pid)return {err:'Select the client and product.'};
+  if(!po)return {err:'PO number is required.'};
+  if(sec==='advances'){
+    if(!val('a_date'))return {err:'Enter the date received.'};
+    if(!(num('a_qty')>0))return {err:'Enter the PO quantity.'};
+    if(!(num('a_rate')>0))return {err:'Enter the PO rate.'};
+    if(!(num('a_recv')>0))return {err:'Enter the advance received.'};
+    return {row:{id:id,date:val('a_date'),productId:pid,po:po,poQty:num('a_qty'),poRate:num('a_rate'),received:num('a_recv'),note:val('a_note')}};
+  }
+  if(sec==='invoices'){
+    const no=val('i_no');
+    if(!no)return {err:'Invoice number is required.'};
+    if([...D[S.co].invoices.values()].some(i=>i.id!==id&&norm(i.invNo)===norm(no)))return {err:'An invoice with this number already exists.'};
+    if(!val('i_date'))return {err:'Enter the invoice date.'};
+    if(!(num('i_qty')>0))return {err:'Enter the invoice quantity.'};
+    return {row:{id:id,date:val('i_date'),invNo:no,productId:pid,po:po,qty:num('i_qty'),extra:num('i_extra'),paid:num('i_paid')}};
+  }
+  if(!val('d_date'))return {err:'Enter the dispatch date.'};
+  if(!(num('d_qty')>0))return {err:'Enter the quantity dispatched.'};
+  return {row:{id:id,date:val('d_date'),productId:pid,po:po,qty:num('d_qty'),invNo:val('d_inv'),transporter:val('d_trans'),lr:val('d_lr'),status:val('d_status')||'Dispatched'}};
+}
+async function onSubmit(e){
+  e.preventDefault();
+  const sec=S.form.sec,res=readForm(sec),er=$('#ferr');
+  if(res.err){er.textContent=res.err;return;}
+  er.textContent='';
+  if(await put(sec,res.row)){toast('Saved');S.form=null;buildPanel();}
+}
+
+/* ---------- CSV ---------- */
+async function exportCsv(bid){
+  const b=S.blocks.find(x=>x.id===bid);if(!b||!dl)return;
+  const q=s=>{s=String(s==null?'':s);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const lines=[b.cols.map(c=>q(c.h)).join(',')];
+  filtered(b).forEach(r=>lines.push(b.cols.map(c=>{const v=c.t(r);return q(typeof v==='number'?Math.round(v*100)/100:v);}).join(',')));
+  const co=COS.find(c=>c.key===S.co).name;
+  try{await dl.save({filename:(co+' - '+b.name+'.csv').replace(/[\\/:*?"<>|]/g,'-'),data:'﻿'+lines.join('\r\n')});}
+  catch(e){if(!e||e.code!=='declined')toast('Could not save the file.');}
+}
+
+/* ---------- events ---------- */
+async function tryDelete(sec,id){
+  const d=D[S.co];
+  if(sec==='clients'&&[...d.products.values()].some(p=>p.clientId===id)){toast('Delete this client’s products first.');return;}
+  if(sec==='products'){
+    const n=['advances','invoices','dispatches'].reduce((a,s)=>a+[...d[s].values()].filter(r=>r.productId===id).length,0);
+    if(n){toast('This product is used in '+n+(n===1?' entry':' entries')+'. Delete those first.');return;}
+  }
+  await del(sec,id);
+}
+async function clearSamples(){
+  const k=S.co;const jobs=[];
+  SECS.forEach(s=>D[k][s].forEach((r,id)=>{if(r.sample)jobs.push([s,id]);}));
+  for(const j of jobs){
+    D[k][j[0]].delete(j[1]);
+    if(store){try{await store.collection(k+'_'+j[0]).doc(j[1]).delete();}catch(e){}}else saveLocal(k,j[0]);
+  }
+  refresh();toast('Example rows cleared');
+}
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-act]');if(!a)return;
+  const act=a.dataset.act;
+  if(act==='co'){S.co=a.dataset.co;S.form=null;S.q='';saveUI();buildAll();}
+  else if(act==='tab'||act==='goto'){S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
+  else if(act==='add'){S.form={sec:S.tab,id:null};showForm();}
+  else if(act==='cancel'){S.form=null;$('#formHost').innerHTML='';}
+  else if(act==='edit'){S.form={sec:a.dataset.sec,id:a.dataset.id};showForm();const f=$('#frm');if(f&&f.scrollIntoView)f.scrollIntoView({block:'nearest'});}
+  else if(act==='del'){
+    const id=a.dataset.id;
+    if(S.delArm===id){S.delArm=null;clearTimeout(delTimer);tryDelete(a.dataset.sec,id);}
+    else{S.delArm=id;clearTimeout(delTimer);delTimer=setTimeout(()=>{S.delArm=null;renderList();},4000);renderList();}
+  }
+  else if(act==='csv'){exportCsv(a.dataset.b);}
+  else if(act==='clearsample'){clearSamples();}
+});
+document.addEventListener('input',e=>{if(e.target.id==='q'){S.q=e.target.value;renderList();}});
+document.addEventListener('change',e=>{if(e.target.id==='showdone'){S.showDone=e.target.checked;renderList();}});
+
+
+/* ---------- standalone: file download, backup and restore ---------- */
+function saveBlob(filename,data,type){
+  const b=new Blob([data],{type:type});const u=URL.createObjectURL(b);
+  const a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),1500);
+}
+dl={save:async o=>{saveBlob(o.filename,o.data,'text/csv;charset=utf-8');return {status:'saved'};}};
+function backupAll(){
+  const out={app:'order-desk',version:1,exported:new Date().toISOString(),data:{}};
+  COS.forEach(c=>{out.data[c.key]={};SECS.forEach(s=>{out.data[c.key][s]=[...D[c.key][s].values()];});});
+  saveBlob('order-desk-backup-'+todayStr()+'.json',JSON.stringify(out,null,1),'application/json');
+  toast('Backup downloaded');
+}
+function restoreAll(file){
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const j=JSON.parse(fr.result);
+      if(!j||j.app!=='order-desk'||!j.data)throw new Error('bad');
+      if(!window.confirm('Restore this backup? It replaces everything currently saved in this browser.'))return;
+      COS.forEach(c=>SECS.forEach(s=>{
+        const rows=(j.data[c.key]&&j.data[c.key][s])||[];
+        D[c.key][s]=new Map(rows.filter(r=>r&&r.id).map(r=>[r.id,r]));
+        saveLocal(c.key,s);
+      }));
+      S.form=null;buildAll();toast('Backup restored');
+    }catch(e){toast('That file is not an Order & Payment Desk backup.');}
+  };
+  fr.readAsText(file);
+}
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-act]');if(!a)return;
+  if(a.dataset.act==='backup')backupAll();
+  else if(a.dataset.act==='restore')$('#restoreFile').click();
+});
+document.addEventListener('change',e=>{
+  if(e.target.id==='restoreFile'&&e.target.files[0]){restoreAll(e.target.files[0]);e.target.value='';}
+});
+
+/* ---------- boot ---------- */
+function subscribeAll(){
+  COS.forEach(c=>SECS.forEach(s=>{
+    store.collection(c.key+'_'+s).onSnapshot(snap=>{
+      const m=new Map();snap.docs.forEach(doc=>{const x=doc.data();m.set(doc.id,Object.assign({},x,{id:doc.id}));});
+      D[c.key][s]=m;
+      if(R)refresh();
+    },err=>{toast('Live data stopped: '+((err&&err.code)||'unknown'));});
+  }));
+}
+loadUI();
+buildAll();
+loadLocal();
+buildAll();
+})();
+</script>
+
+</body>
+</html>
