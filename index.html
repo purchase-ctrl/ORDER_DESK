@@ -117,6 +117,8 @@ tfoot td{background:var(--head);font-weight:700;border-top:1px solid var(--line)
 .empty h3{font-family:var(--display);font-size:18px;margin-bottom:4px}
 .note{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;background:var(--warn-bg);color:var(--warn);border-radius:14px;padding:10px 16px;font-weight:500}
 .note .btn{color:var(--ink)}
+.note+.note{margin-top:8px}
+.note.due{background:var(--bad-bg);color:var(--bad)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;max-width:calc(100% - 32px);z-index:10}
 @media (max-width:640px){
   h1{font-size:28px}
@@ -469,7 +471,7 @@ function blocks(){
       cols:[{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},
         {h:'Due date',t:r=>r.due,fmt:fd},{h:'Amount due',t:r=>r.net,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.paid,cls:'n',fmt:inr,s:1},{h:'Pending',t:r=>r.pend,cls:'n',fmt:inr,s:1},
         {h:'Status',t:r=>r.pend<=TOL?'Paid':(r.due&&daysBetween(today,r.due)<0?'Overdue':(r.paid>0?'Part paid':'Unpaid')),r:stChip},
-        {h:'',t:r=>'',r:r=>'<button class="btn sm" data-act="payfor" data-id="'+esc(r.id)+'">Record payment</button>'}],
+        {h:'',t:r=>'',r:r=>'<button class="btn sm" data-act="payfor" data-id="'+esc(r.id)+'">Record payment</button> <button class="btn sm" data-act="remind" data-id="'+esc(r.id)+'">Email reminder</button>'}],
       empty:['No pending payments','Every invoice is paid, or no invoice has been raised yet. Add invoices in Daily Invoicing.']},
      {id:'pay-log',name:'payment log',title:'Payments received',edit:'payments',search:1,rows:R.pay,
       cols:[{h:'Date received',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.i?r.i.invNo:'(removed invoice)',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.i?r.i.po:'',cls:'mono'},
@@ -561,9 +563,60 @@ function renderTabs(){
   const cnt={clients:d.clients.size,products:d.products.size,advances:d.advances.size,invoices:d.invoices.size,payments:R.inv.filter(i=>i.pend>TOL).length,dispatches:R.t.openPOs};
   $('#tabs').innerHTML=SECS.map(s=>'<button class="tab" role="tab" data-act="tab" data-tab="'+s+'" aria-selected="'+(s===S.tab)+'">'+TLAB[s]+'<span class="c">'+cnt[s]+'</span></button>').join('');
 }
+const SOON=3;
 function renderBanner(){
-  const d=D[S.co];let n=0;SECS.forEach(s=>d[s].forEach(r=>{if(r.sample)n++;}));
-  $('#banner').innerHTML=n?'<div class="note"><span>Example rows from your payment sheet are loaded for this company, so you can see how it works.</span><button class="btn sm" data-act="clearsample">Clear example rows</button></div>':'';
+  const el=$('#banner');if(!el)return;
+  const d0=D[S.co];let n=0;SECS.forEach(s=>d0[s].forEach(r=>{if(r.sample)n++;}));
+  const sampleHTML=n?'<div class="note"><span>Example rows from your payment sheet are loaded for this company, so you can see how it works.</span><button class="btn sm" data-act="clearsample">Clear example rows</button></div>':'';
+  const today=todayStr();let parts=[],cur=null;
+  COS.forEach(c=>{
+    const r=c.key===S.co&&R?R:calc(dataFor(c.key));
+    const open=r.inv.filter(i=>i.pend>TOL&&i.due);
+    const od=open.filter(i=>daysBetween(today,i.due)<0),soon=open.filter(i=>{const d=daysBetween(today,i.due);return d>=0&&d<=SOON;});
+    if(od.length||soon.length){
+      const bits=[];
+      if(od.length)bits.push(od.length+(od.length===1?' invoice':' invoices')+' overdue ('+inr(od.reduce((a,i)=>a+i.pend,0))+')');
+      if(soon.length)bits.push(soon.length+(soon.length===1?' invoice':' invoices')+' due within '+SOON+' days ('+inr(soon.reduce((a,i)=>a+i.pend,0))+')');
+      parts.push('<strong>'+esc(c.name)+':</strong> '+bits.join(', '));
+    }
+  });
+  if(!parts.length){el.innerHTML=sampleHTML;return;}
+  el.innerHTML=sampleHTML+'<div class="note due" role="status"><span>Payment due. '+parts.join(' &nbsp;·&nbsp; ')+'</span>'+(S.tab==='payments'?'':'<button class="btn sm" data-act="goto" data-tab="payments">View payments</button>')+'</div>';
+}
+function reminderText(i){
+  const c=i.c||{},co=COS.find(x=>x.key===S.co).name,today=todayStr();
+  const dd=i.due?daysBetween(today,i.due):null;
+  const to=c.email||'';
+  const subject=(dd!=null&&dd<0?'Overdue payment reminder':'Payment reminder')+' - Invoice '+i.invNo+' - '+co;
+  const lines=['Dear '+(c.contact||c.name||'Sir/Madam')+',','',
+    (dd!=null&&dd<0?'This is a reminder that the payment for the invoice below is overdue by '+(-dd)+' day'+(-dd===1?'':'s')+'.':'This is a gentle reminder about the payment for the invoice below.'),'',
+    'Invoice no.: '+i.invNo,'Invoice date: '+fd(i.date),'PO number: '+i.po,'Product: '+(i.p?i.p.name:''),
+    'Amount due: '+inr(i.net),'Received so far: '+inr(i.paid),'Pending: '+inr(i.pend),'Due date: '+fd(i.due),'',
+    'Kindly arrange the payment at the earliest and share the transaction details. Please ignore this mail if the payment has already been made.','','Thanks and regards,',co];
+  return {to:to,subject:subject,body:lines.join('\n')};
+}
+function showReminder(id){
+  const i=R.inv.find(x=>x.id===id);if(!i)return;
+  const m=reminderText(i);
+  $('#formHost').innerHTML='<div class="form" id="remind" data-inv="'+esc(id)+'"><h3>Payment reminder for invoice '+esc(i.invNo)+'</h3><div class="grid">'+
+    '<div class="f"><label for="rm_to">To (client email)</label><input id="rm_to" type="email" value="'+esc(m.to)+'" placeholder="Add the client email in Client / Brand">'+(m.to?'':'<small>No email saved for this client</small>')+'</div>'+
+    '<div class="f wide"><label for="rm_sub">Subject</label><input id="rm_sub" type="text" value="'+esc(m.subject)+'"></div>'+
+    '<div class="f wide"><label for="rm_body">Message</label><textarea id="rm_body" rows="12">'+esc(m.body)+'</textarea></div></div>'+
+    '<div class="fa"><button class="btn primary" type="button" data-act="openmail">Open in email app</button><button class="btn" type="button" data-act="copymail">Copy message</button><button class="btn" type="button" data-act="cancel">Close</button><span id="ferr" class="ferr" role="alert"></span></div>'+
+    '<p class="muted">This page cannot send mail by itself. The button opens your email app with the message ready to send. If nothing opens, use Copy message.</p></div>';
+  const f=$('#remind');if(f&&f.scrollIntoView)f.scrollIntoView({block:'nearest'});
+}
+async function copyMail(){
+  const t='To: '+val('rm_to')+'\nSubject: '+val('rm_sub')+'\n\n'+($('#rm_body')?$('#rm_body').value:'');
+  try{await navigator.clipboard.writeText(t);toast('Message copied');}
+  catch(e){const b=$('#rm_body');if(b){b.focus();b.select();}toast('Press Ctrl+C to copy the selected message');}
+}
+function openMail(){
+  const to=val('rm_to');
+  if(!to){$('#ferr').textContent='Add the client email first (Client / Brand tab).';return;}
+  $('#ferr').textContent='';
+  const a=document.createElement('a');a.href='mailto:'+encodeURIComponent(to).replace(/%40/g,'@')+'?subject='+encodeURIComponent(val('rm_sub'))+'&body='+encodeURIComponent($('#rm_body').value);
+  a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
 }
 function renderSync(){
   $('#sync').textContent='Saved in this browser only. Use Backup to move it.';
@@ -817,6 +870,9 @@ document.addEventListener('click',e=>{
   if(act==='co'){S.co=a.dataset.co;S.form=null;S.q='';saveUI();buildAll();}
   else if(act==='tab'||act==='goto'){S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
   else if(act==='add'){S.form={sec:S.tab,id:null};showForm();}
+  else if(act==='remind'){S.form=null;showReminder(a.dataset.id);}
+  else if(act==='openmail'){openMail();}
+  else if(act==='copymail'){copyMail();}
   else if(act==='payfor'){S.form={sec:'payments',id:null,inv:a.dataset.id};showForm();const f=$('#frm');if(f&&f.scrollIntoView)f.scrollIntoView({block:'nearest'});}
   else if(act==='cancel'){S.form=null;$('#formHost').innerHTML='';}
   else if(act==='edit'){S.form={sec:a.dataset.sec,id:a.dataset.id};showForm();const f=$('#frm');if(f&&f.scrollIntoView)f.scrollIntoView({block:'nearest'});}
