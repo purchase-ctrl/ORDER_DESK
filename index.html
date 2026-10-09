@@ -48,8 +48,8 @@ p{margin:0}
 .top{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:flex-end;justify-content:space-between}
 .sync{font-size:12px;color:var(--muted);font-family:var(--mono);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px 12px}
 .cos{display:flex;flex-wrap:wrap;gap:10px}
-.co{--co:var(--c2);font:inherit;font-weight:700;padding:11px 20px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;cursor:pointer;text-align:left;min-width:0;box-shadow:var(--shadow);position:relative;padding-left:38px}
-.co::before{content:"";position:absolute;left:15px;top:50%;width:12px;height:12px;margin-top:-6px;border-radius:50%;background:var(--co)}
+.co{--co:var(--c2);font:inherit;font-weight:700;padding:11px 20px 11px 16px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;cursor:pointer;text-align:left;min-width:0;box-shadow:var(--shadow);display:inline-flex;align-items:center;gap:10px}
+.co::before{content:"";flex:none;width:12px;height:12px;border-radius:50%;background:var(--co)}
 .co:nth-child(1){--co:var(--c1)}.co:nth-child(2){--co:var(--c2)}.co:nth-child(3){--co:var(--c3)}
 .co[aria-pressed="true"]{background:var(--co);color:#fff;border-color:var(--co)}
 .co[aria-pressed="true"]::before{background:#fff}
@@ -353,7 +353,7 @@ function calc(d){
   const cli=p=>p?(C.get(p.clientId)||null):null;
   const srt=(a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.id||'').localeCompare(String(b.id||''));
   const groups=new Map();
-  const G=(po,pid)=>{const k=gkey(po,pid);let g=groups.get(k);if(!g){g={k:k,po:String(po||'').trim(),pid:pid,poQty:0,poRate:0,received:0,invQty:0,adjusted:0,dispQty:0,hasAdv:false};groups.set(k,g);}return g;};
+  const G=(po,pid)=>{const k=gkey(po,pid);let g=groups.get(k);if(!g){g={k:k,po:String(po||'').trim(),pid:pid,poQty:0,poRate:0,received:0,invQty:0,adjusted:0,dispQty:0,logQty:0,hasAdv:false};groups.set(k,g);}return g;};
 
   const adv=[...d.advances].sort(srt);
   adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;});
@@ -373,7 +373,7 @@ function calc(d){
       status:pend<=TOL?'Paid':(paid>0?'Partial':'Unpaid')});
   });
 
-  const dis=[...d.dispatches].sort(srt).map(x=>{const p=prod(x.productId),g=G(x.po,x.productId);const q=+x.qty||0;g.dispQty+=q;return Object.assign({},x,{p:p,c:cli(p),q:q});});
+  const dis=[...d.dispatches].sort(srt).map(x=>{const p=prod(x.productId),g=G(x.po,x.productId);const q=+x.qty||0;g.logQty+=q;return Object.assign({},x,{p:p,c:cli(p),q:q});});
 
   groups.forEach(g=>{
     const p=prod(g.pid);
@@ -382,8 +382,9 @@ function calc(d){
     g.pending=Math.max(0,g.required-g.received);g.excess=Math.max(0,g.received-g.required);
     g.recvPct=g.required>0?g.received/g.required*100:null;
     g.unadj=g.received-g.adjusted;
+    g.dispQty=Math.max(g.invQty,g.logQty);
     g.pendDisp=g.poQty>0?Math.max(0,g.poQty-g.dispQty):null;
-    g.ready=Math.max(0,g.invQty-g.dispQty);
+    g.ready=Math.max(0,g.invQty-g.logQty);
   });
 
   const run=new Map();
@@ -471,14 +472,14 @@ function blocks(){
   /* dispatches */
   const done=g=>g.poQty>0&&g.dispQty>=g.poQty;
   const gl=R.groups.filter(g=>S.showDone||!done(g)).sort((a,b)=>(b.ready-a.ready)||((b.pendDisp||0)-(a.pendDisp||0)));
-  const chipD=g=>g.poQty<=0?chip('n0','PO qty not recorded'):(g.dispQty>g.poQty?chip('bad','Over-dispatched'):(done(g)?chip('ok','Complete'):(g.dispQty>g.invQty?chip('warn','Dispatched > invoiced'):(g.ready>0?chip('warn','Ready to ship'):chip('n0',g.invQty>0?'Awaiting next invoice':'Not invoiced')))));
+  const chipD=g=>g.poQty<=0?chip('n0','PO qty not recorded'):(g.dispQty>g.poQty?chip('bad','Over-dispatched'):(done(g)?chip('ok','Complete'):(g.dispQty>g.invQty?chip('warn','Logged > invoiced'):(g.ready>0?chip('warn','Invoiced, add LR'):chip('n0',g.invQty>0?'Awaiting next invoice':'Not invoiced')))));
   return [
     {id:'disp-summary',name:'pending dispatch',title:'Pending dispatch by PO',rows:gl,
       extra:'<label class="chk"><input type="checkbox" id="showdone"'+(S.showDone?' checked':'')+'> Show completed POs</label>',
       cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'PO qty',t:r=>r.poQty||null,cls:'n',fmt:qty},{h:'Invoiced',t:r=>r.invQty,cls:'n',fmt:qty},
-        {h:'Dispatched',t:r=>r.dispQty,cls:'n',fmt:qty},{h:'Pending dispatch',t:r=>r.pendDisp,cls:'n',fmt:qty,s:1},{h:'Invoiced, not dispatched',t:r=>r.ready,cls:'n',fmt:qty,s:1},
+        {h:'Dispatched',t:r=>r.dispQty,cls:'n',fmt:qty},{h:'Pending dispatch',t:r=>r.pendDisp,cls:'n',fmt:qty,s:1},{h:'Invoiced, LR not logged',t:r=>r.ready,cls:'n',fmt:qty,s:1},
         {h:'Dispatched share',t:r=>r.poQty>0?r.dispQty/r.poQty*100:null,r:r=>{if(!(r.poQty>0))return '—';const p=Math.min(100,r.dispQty/r.poQty*100);return '<span class="bar"><i style="width:'+p+'%"></i></span>'+esc(pct(r.dispQty/r.poQty*100));}},
-        {h:'Status',t:r=>r.poQty<=0?'PO qty not recorded':(r.dispQty>r.poQty?'Over-dispatched':(done(r)?'Complete':(r.ready>0?'Ready to ship':'Awaiting invoice'))),r:chipD}],
+        {h:'Status',t:r=>r.poQty<=0?'PO qty not recorded':(r.dispQty>r.poQty?'Over-dispatched':(done(r)?'Complete':(r.ready>0?'Invoiced, add LR':'Awaiting invoice'))),r:chipD}],
       empty:['Nothing pending','Every PO with a recorded quantity has been dispatched, or no PO has been entered yet. Add advance or invoices first.']},
     {id:'disp-log',name:'dispatch log',title:'Dispatch log',edit:'dispatches',search:1,rows:R.dis,
       cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'Invoice no.',t:r=>r.invNo,cls:'mono'},
@@ -533,7 +534,7 @@ function renderKpis(){
     k('Advance received',inr(t.advReceived),t.poCount+(t.poCount===1?' PO':' POs')+' with advance')+
     k('Advance pending',inr(t.advPending),'required minus received')+
     k('Outstanding receivable',inr(t.outstanding),t.overdue+(t.overdue===1?' invoice':' invoices')+' overdue')+
-    k('Yet to dispatch',qty(t.toDispatch)+' units',qty(t.ready)+' invoiced, not dispatched');
+    k('Yet to dispatch',qty(t.toDispatch)+' units',qty(t.ready)+' invoiced, LR not logged');
 }
 function renderTabs(){
   const d=D[S.co];
