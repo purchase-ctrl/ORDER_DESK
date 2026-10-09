@@ -119,6 +119,24 @@ tfoot td{background:var(--head);font-weight:700;border-top:1px solid var(--line)
 .note .btn{color:var(--ink)}
 .note+.note{margin-top:8px}
 .note.due{background:var(--bad-bg);color:var(--bad)}
+.bk{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.gate{position:fixed;inset:0;z-index:50;overflow:auto;display:grid;place-items:center;padding:24px 16px;background-color:var(--bg);background-image:radial-gradient(700px 480px at 12% 8%,var(--glow1),transparent 70%),radial-gradient(700px 520px at 90% 90%,var(--glow2),transparent 70%)}
+.gate[hidden],.wrap[hidden]{display:none}
+.gcard{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:28px;box-shadow:0 18px 50px rgba(150,40,100,.18);padding:30px 28px;display:flex;flex-direction:column;gap:18px}
+.gbrand{display:flex;align-items:center;gap:12px}
+.gmark{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,var(--c1),var(--c2) 55%,var(--c3));flex:none}
+.gbrand b{display:block;font-family:var(--display);font-style:italic;font-size:22px;line-height:1.1}
+.gbrand span{color:var(--muted);font-size:12px}
+.gcard h2{font-size:24px}
+.gform{display:flex;flex-direction:column;gap:14px}
+.gpw{position:relative}
+.gpw input{padding-right:64px}
+.gpw button{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:12px}
+.gcard .btn.primary{padding:11px 16px;font-size:15px}
+.gfoot{font-size:12px;color:var(--muted)}
+.gfoot .lnk{padding:0;font-size:12px}
+.gout{display:inline-flex;gap:8px;align-items:center}
+
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:600;max-width:calc(100% - 32px);z-index:10}
 @media (max-width:640px){
   h1{font-size:28px}
@@ -137,128 +155,31 @@ tfoot td{background:var(--head);font-weight:700;border-top:1px solid var(--line)
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@1,600&family=Fraunces:wght@600&display=swap">
-<style>
-/* Layout: one ledger page per company. Company switch on top, a four-figure position strip,
-   five tabs (client, products, advance, invoicing, dispatch), each tab = entry form + tables. */
-:root{
-  --bg:#f2f5f3; --surface:#ffffff; --ink:#15201c; --muted:#5a6a64; --line:#d6dfdb; --head:#e8eeeb;
-  --accent:#0e6b56; --accent-ink:#ffffff; --accent-soft:#dcefe8;
-  --ok:#1b7447; --ok-bg:#dcf1e4; --warn:#8f5405; --warn-bg:#fbefd5; --bad:#a8281f; --bad-bg:#fae3e0; --neutral-bg:#e8eeeb;
-  --font:'Schibsted Grotesk',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
-  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --bg:#0e1411; --surface:#161f1b; --ink:#e5eee9; --muted:#97a8a1; --line:#28362f; --head:#1c2823;
-    --accent:#4cc4a0; --accent-ink:#07261d; --accent-soft:#183328;
-    --ok:#6fd49a; --ok-bg:#143325; --warn:#efb45a; --warn-bg:#3a2c11; --bad:#ff8d83; --bad-bg:#3b1a17; --neutral-bg:#1c2823;
-    color-scheme:dark;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#0e1411; --surface:#161f1b; --ink:#e5eee9; --muted:#97a8a1; --line:#28362f; --head:#1c2823;
-  --accent:#4cc4a0; --accent-ink:#07261d; --accent-soft:#183328;
-  --ok:#6fd49a; --ok-bg:#143325; --warn:#efb45a; --warn-bg:#3a2c11; --bad:#ff8d83; --bad-bg:#3b1a17; --neutral-bg:#1c2823;
-  color-scheme:dark;
-}
-*{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.45;padding-inline:16px;padding-block:20px 56px}
-.wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
-h1{font-size:24px;line-height:1.2;margin:0;letter-spacing:-.01em;text-wrap:balance}
-h2{font-size:18px;margin:0;text-wrap:balance}
-h3{font-size:14px;margin:0}
-p{margin:0}
-.muted{color:var(--muted)}
-.top{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:flex-end;justify-content:space-between}
-.sync{font-size:12px;color:var(--muted);font-family:var(--mono)}
-.bk{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.cos{display:flex;flex-wrap:wrap;gap:8px}
-.co{font:inherit;font-weight:600;padding:10px 16px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;cursor:pointer;text-align:left;min-width:0}
-.co[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.kpi{background:var(--surface);padding:12px 16px;min-width:0}
-.kpi .l{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
-.kpi .v{font-family:var(--mono);font-size:21px;font-weight:500;margin:2px 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.kpi .s{font-size:12px;color:var(--muted)}
-.tabs{display:flex;flex-wrap:wrap;gap:2px 6px;border-bottom:1px solid var(--line)}
-.tab{background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:10px 12px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}
-.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
-.tab .c{font-family:var(--mono);font-size:11px;font-weight:500;background:var(--neutral-bg);color:var(--muted);border-radius:10px;padding:1px 7px;margin-left:6px}
-.ph{display:flex;flex-wrap:wrap;gap:10px 20px;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
-.ph>div{min-width:0;max-width:640px}
-.pt{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.btn{font:inherit;font-weight:600;padding:8px 14px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
-.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-.btn.sm{padding:5px 10px;font-size:12px}
-.lnk{background:none;border:0;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:2px 6px}
-.lnk.del{color:var(--bad)}
-input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;min-width:0}
-input[type="search"]{width:220px;max-width:100%}
-input[type="checkbox"]{width:auto}
-textarea{resize:vertical}
-.form{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px;display:flex;flex-direction:column;gap:14px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px 14px}
-.f{min-width:0}
-.f label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px}
-.f small{display:block;color:var(--muted);font-size:12px;margin-top:3px;font-family:var(--mono)}
-.f.wide{grid-column:1/-1}
-.fa{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.ferr{color:var(--bad);font-weight:600}
-.prev{display:flex;flex-wrap:wrap;gap:6px 28px;padding:10px 12px;background:var(--accent-soft);border-radius:6px}
-.pv .l{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
-.pv .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:500}
-.block{margin-bottom:22px}
-.bh{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;margin-bottom:8px}
-.bh .cnt{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;font-weight:500}
-.bt{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.chk{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
-.tw{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
-table{border-collapse:collapse;width:100%;min-width:max-content}
-th{background:var(--head);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:9px 12px;white-space:nowrap;font-weight:600;border-bottom:1px solid var(--line)}
-th.r{text-align:right}
-td{padding:8px 12px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
-tbody tr:last-child td{border-bottom:0}
-tbody tr:hover td{background:var(--head)}
-td.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
-td.mono{font-family:var(--mono)}
-td.wrap{white-space:normal;min-width:200px}
-td.act{text-align:right}
-tfoot td{background:var(--head);font-weight:600;border-top:1px solid var(--line);border-bottom:0}
-.chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
-.chip.ok{background:var(--ok-bg);color:var(--ok)}
-.chip.warn{background:var(--warn-bg);color:var(--warn)}
-.chip.bad{background:var(--bad-bg);color:var(--bad)}
-.chip.n0{background:var(--neutral-bg);color:var(--muted)}
-.sub{display:block;font-size:12px;color:var(--muted);font-family:var(--mono)}
-.bar{display:inline-block;width:84px;height:6px;border-radius:3px;background:var(--line);overflow:hidden;vertical-align:middle;margin-right:8px}
-.bar>i{display:block;height:100%;background:var(--accent)}
-.empty{border:1px dashed var(--line);border-radius:8px;padding:28px 20px;background:var(--surface)}
-.empty h3{font-size:15px;margin-bottom:4px}
-.note{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 14px;font-weight:500}
-.note .btn{color:var(--ink)}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;max-width:calc(100% - 32px);z-index:10}
-@media (max-width:640px){
-  h1{font-size:21px}
-  .co{flex:1 1 100%}
-  .kpi .v{font-size:19px}
-  input[type="search"]{width:100%}
-  .pt{width:100%}
-}
-@media (prefers-reduced-motion:no-preference){
-  .btn,.co,.tab{transition:background-color .12s,border-color .12s,color .12s}
-}
-</style>
+
 
 </head>
 <body>
-<div class="wrap">
+<div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gt" hidden>
+  <div class="gcard">
+    <div class="gbrand"><i class="gmark"></i><div><b>Order &amp; Payment Desk</b><span>Sunshine Industries · Sunshine Cosmetics · Dyana International</span></div></div>
+    <div><h2 id="gt"></h2><p id="gsub" class="muted"></p></div>
+    <form id="gform" class="gform" novalidate>
+      <div class="f"><label for="g_user">Username</label><input id="g_user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false"></div>
+      <div class="f"><label for="g_pass">Password</label><div class="gpw"><input id="g_pass" type="password" autocomplete="current-password"><button type="button" class="lnk" id="g_show">Show</button></div></div>
+      <div class="f" id="g_c_wrap" hidden><label for="g_conf">Confirm password</label><input id="g_conf" type="password" autocomplete="new-password"></div>
+      <span id="g_err" class="ferr" role="alert"></span>
+      <button class="btn primary" type="submit" id="g_go"></button>
+    </form>
+    <p class="gfoot" id="gfoot"></p>
+  </div>
+</div>
+<div class="wrap" hidden>
   <header class="top">
     <div>
       <h1>Order &amp; Payment Desk</h1>
       <p class="muted">Advance, invoicing and dispatch for each company, in one format.</p>
     </div>
-    <div class="bk"><span id="sync" class="sync"></span><button class="btn sm" data-act="backup">Backup</button><button class="btn sm" data-act="restore">Restore</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
+    <div class="bk"><span id="sync" class="sync"></span><button class="btn sm" data-act="logout">Log out</button><button class="btn sm" data-act="backup">Backup</button><button class="btn sm" data-act="restore">Restore</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
   </header>
   <nav id="cos" class="cos" aria-label="Company"></nav>
   <div id="banner"></div>
@@ -937,6 +858,71 @@ function subscribeAll(){
     },err=>{toast('Live data stopped: '+((err&&err.code)||'unknown'));});
   }));
 }
+
+/* ---------- login gate ---------- */
+const AUTH_KEY='orderdesk:auth',SESS_KEY='orderdesk:session';
+const b64=u=>btoa(String.fromCharCode.apply(null,u));
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function hashPw(pw,salt){
+  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);
+  return b64(new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:salt,iterations:150000,hash:'SHA-256'},k,256)));
+}
+let authMem=null;
+const getAuth=()=>{try{const r=localStorage.getItem(AUTH_KEY);if(r)return JSON.parse(r);}catch(e){}return authMem;};
+const setAuth=a=>{authMem=a;try{if(a)localStorage.setItem(AUTH_KEY,JSON.stringify(a));else localStorage.removeItem(AUTH_KEY);}catch(e){}};
+const hasSession=()=>{try{return sessionStorage.getItem(SESS_KEY)==='1';}catch(e){return false;}};
+const setSession=v=>{try{if(v)sessionStorage.setItem(SESS_KEY,'1');else sessionStorage.removeItem(SESS_KEY);}catch(e){}};
+function lockApp(locked){
+  const w=document.querySelector('.wrap'),g=$('#gate'),t=$('#toast');
+  w.hidden=locked;g.hidden=!locked;if(locked)t.hidden=true;
+}
+function showGate(){
+  const a=getAuth(),create=!a;
+  lockApp(true);
+  $('#gt').textContent=create?'Create your login':'Welcome back';
+  $('#gsub').textContent=create?'Set one username and password for this desk. You will use it every time you open the app.':'Log in to open the desk.';
+  $('#g_c_wrap').hidden=!create;
+  $('#g_go').textContent=create?'Create login':'Log in';
+  $('#g_pass').autocomplete=create?'new-password':'current-password';
+  $('#g_err').textContent='';$('#g_pass').value='';$('#g_conf').value='';
+  if(!create)$('#g_user').value=a.user;
+  $('#gfoot').innerHTML=create?'The login is saved on this device. Choose a password you will remember.':'<button type="button" class="lnk" id="g_forgot">Forgot password?</button>';
+  setTimeout(()=>{const f=create||!$('#g_user').value?$('#g_user'):$('#g_pass');if(f)f.focus();},0);
+}
+async function submitGate(e){
+  e.preventDefault();
+  const a=getAuth(),err=$('#g_err'),user=$('#g_user').value.trim(),pw=$('#g_pass').value;
+  err.textContent='';
+  if(!(window.crypto&&crypto.subtle)){err.textContent='This browser cannot create a secure login. Open the page in an up-to-date browser.';return;}
+  if(!a){
+    if(user.length<3)return void(err.textContent='Username needs at least 3 characters.');
+    if(pw.length<6)return void(err.textContent='Password needs at least 6 characters.');
+    if(pw!==$('#g_conf').value)return void(err.textContent='The two passwords do not match.');
+    const salt=crypto.getRandomValues(new Uint8Array(16));
+    setAuth({user:user,salt:b64(salt),hash:await hashPw(pw,salt)});
+    setSession(true);lockApp(false);toast('Login created');
+  }else{
+    if(user.toLowerCase()!==a.user.toLowerCase()||await hashPw(pw,unb64(a.salt))!==a.hash){err.textContent='Username or password is not correct.';$('#g_pass').select();return;}
+    setSession(true);lockApp(false);
+  }
+}
+function initGate(){
+  $('#gform').addEventListener('submit',submitGate);
+  $('#g_show').addEventListener('click',()=>{const p=$('#g_pass'),c=$('#g_conf'),h=p.type==='password';p.type=c.type=h?'text':'password';$('#g_show').textContent=h?'Hide':'Show';});
+  document.addEventListener('click',e=>{
+    if(e.target.id==='g_forgot'){
+      $('#gfoot').innerHTML='To remove this login and create a new one, type RESET. Your companies, invoices and payments stay as they are.<span class="gout"><input id="g_reset" type="text" autocomplete="off" aria-label="Type RESET"><button type="button" class="btn sm" id="g_reset_go">Remove login</button></span>';
+      $('#g_reset').focus();
+    }
+    if(e.target.id==='g_reset_go'){
+      if($('#g_reset').value.trim().toUpperCase()!=='RESET'){$('#g_err').textContent='Type RESET to confirm.';return;}
+      setAuth(null);setSession(false);showGate();
+    }
+    if(e.target.closest&&e.target.closest('[data-act="logout"]')){setSession(false);S.form=null;showGate();}
+  });
+  if(hasSession()&&getAuth())lockApp(false);else showGate();
+}
+initGate();
 loadUI();
 buildAll();
 loadLocal();
