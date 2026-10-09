@@ -179,7 +179,7 @@ tfoot td{background:var(--head);font-weight:700;border-top:1px solid var(--line)
       <h1>Order &amp; Payment Desk</h1>
       <p class="muted">Advance, invoicing and dispatch for each company, in one format.</p>
     </div>
-    <div class="bk"><span id="sync" class="sync"></span><button class="btn sm" data-act="logout">Log out</button><button class="btn sm" data-act="backup">Backup</button><button class="btn sm" data-act="restore">Restore</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
+    <div class="bk"><span id="sync" class="sync"></span><span id="who" class="sync"></span><button class="btn sm" data-act="logout">Log out</button><button class="btn sm" data-act="backup">Backup</button><button class="btn sm" data-act="restore">Restore</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
   </header>
   <nav id="cos" class="cos" aria-label="Company"></nav>
   <div id="banner"></div>
@@ -196,13 +196,14 @@ tfoot td{background:var(--head);font-weight:700;border-top:1px solid var(--line)
 /* ---------- constants ---------- */
 const COS=[{key:'si',name:'Sunshine Industries'},{key:'scp',name:'Sunshine Cosmetics Pvt Ltd'},{key:'di',name:'Dyana International'}];
 const SECS=['clients','products','advances','invoices','payments','dispatches'];
-const TLAB={clients:'Client / Brand',products:'Products',advances:'Advance',invoices:'Daily Invoicing',payments:'Payment Status',dispatches:'Pending Dispatch'};
+const TLAB={clients:'Client / Brand',products:'Products',advances:'Advance',invoices:'Daily Invoicing',payments:'Payment Status',dispatches:'Pending Dispatch',admin:'Admin'};
 const ADD={clients:'Add client',products:'Add product',advances:'Add advance received',invoices:'Add invoice',payments:'Record payment',dispatches:'Log dispatch'};
 const INTRO={
   clients:'The brands and companies you supply. Products, advances and invoices all sit under a client.',
   products:'Final cost, advance % and payment terms for each product. Advance and invoices read from here.',
   advances:'Advance received against each PO, in as many parts as it arrives. Required advance = PO quantity × final cost × advance %.',
   invoices:'Each invoice takes cost and payment terms from the product, adds 18% GST and adjusts the advance already received for that PO.',
+  admin:'Manage users and every entry in this company. The admin can edit or delete any entry. Other users can change only the entries they added.',
   payments:'Every invoice with what is due, what has been received and what is still pending. Record each payment as it comes in.',
   dispatches:'What is still to ship against each PO, and the dispatches already logged.'
 };
@@ -234,7 +235,7 @@ const D={};
 COS.forEach(c=>{D[c.key]={};SECS.forEach(s=>{D[c.key][s]=new Map();});});
 let store=null, dl=null, R=null, delTimer=null, toastTimer=null;
 
-function loadUI(){try{const u=JSON.parse(localStorage.getItem('orderdesk:ui')||'{}');if(COS.some(c=>c.key===u.co))S.co=u.co;if(SECS.includes(u.tab))S.tab=u.tab;}catch(e){}}
+function loadUI(){try{const u=JSON.parse(localStorage.getItem('orderdesk:ui')||'{}');if(COS.some(c=>c.key===u.co))S.co=u.co;if(SECS.includes(u.tab)||u.tab==='admin')S.tab=u.tab;}catch(e){}}
 function saveUI(){try{localStorage.setItem('orderdesk:ui',JSON.stringify({co:S.co,tab:S.tab}));}catch(e){}}
 const lsKey=(k,s)=>'orderdesk:data:'+k+':'+s;
 function loadLocal(){COS.forEach(c=>SECS.forEach(s=>{try{JSON.parse(localStorage.getItem(lsKey(c.key,s))||'[]').forEach(r=>D[c.key][s].set(r.id,r));}catch(e){}}));}
@@ -247,6 +248,9 @@ async function put(sec,row){
   const k=S.co,id=row.id||uid();
   const r=JSON.parse(JSON.stringify(Object.assign({},row,{id:id})));
   const prev=D[k][sec].get(id);
+  if(prev&&!canModify(prev)){toast('You can only edit entries you added.');return false;}
+  if(prev){['createdBy','createdByName','createdAt'].forEach(f=>{if(prev[f]!==undefined)r[f]=prev[f];});}
+  else if(ME){r.createdBy=ME.id;r.createdByName=ME.user;r.createdAt=todayStr();}
   D[k][sec].set(id,r);
   if(store){
     try{await store.collection(k+'_'+sec).doc(id).set(r);}
@@ -256,6 +260,7 @@ async function put(sec,row){
 }
 async function del(sec,id){
   const k=S.co,prev=D[k][sec].get(id);
+  if(prev&&!canModify(prev)){toast('You can only delete entries you added.');return false;}
   D[k][sec].delete(id);
   if(store){
     try{await store.collection(k+'_'+sec).doc(id).delete();}
@@ -384,6 +389,18 @@ function blocks(){
         empty:['No advance entries yet','Log each part payment against its PO as it arrives. The pending share is worked out as of each date.']}
     ];
   }
+  if(t==='admin'){
+    if(!isAdmin())return [];
+    const us=[...USERS.values()].sort((a,b)=>(a.role===b.role?0:(a.role==='admin'?-1:1))||String(a.user).localeCompare(String(b.user)));
+    return [{id:'admin-users',name:'users',title:'Users',rows:us,acts:userActs,
+      cols:[{h:'Username',t:r=>r.user+(ME&&r.id===ME.id?' (you)':'')},{h:'Role',t:r=>r.role==='admin'?'Admin':'User',r:r=>chip(r.role==='admin'?'ok':'n0',r.role==='admin'?'Admin':'User')},
+        {h:'Created',t:r=>r.created,fmt:fd},{h:'Entries added',t:r=>countBy(r.id),cls:'n',fmt:qty}],
+      empty:['No users yet','Accounts appear here as people sign up.']},
+     {id:'admin-entries',name:'all entries',title:'All entries in this company',search:1,rows:adminEntries(),
+      acts:r=>stdActs(r.sec,r.rec),
+      cols:[{h:'Type',t:r=>r.label},{h:'Entry',t:r=>r.text,cls:'wrap'},{h:'Date',t:r=>r.date,fmt:fd},{h:'Added by',t:r=>whoName(r.rec)}],
+      empty:['No entries yet','Entries added in any tab show up here for the admin to edit or delete.']}];
+  }
   if(t==='payments'){
     const open=R.inv.filter(i=>S.showDone||i.pend>TOL).sort((a,b)=>String(a.due||'9').localeCompare(String(b.due||'9')));
     const stChip=r=>{if(r.pend<=TOL)return chip('ok','Paid');const dd=r.due?daysBetween(today,r.due):null;if(dd!=null&&dd<0)return chip('bad',(-dd)+'d overdue');return chip(r.paid>0?'warn':'n0',r.paid>0?'Part paid':'Unpaid');};
@@ -450,15 +467,15 @@ function blockHTML(b){
     (dl&&b.rows.length?'<button class="btn sm" data-act="csv" data-b="'+b.id+'">Export CSV</button>':'')+'</div></div>';
   if(!b.rows.length){return h+'<div class="empty"><h3>'+esc(b.empty[0])+'</h3><p class="muted">'+esc(b.empty[1])+'</p></div></section>';}
   if(!rows.length){return h+'<div class="empty"><h3>No rows match</h3><p class="muted">Clear the search to see every row.</p></div></section>';}
-  h+='<div class="tw"><table><thead><tr>'+b.cols.map(c=>'<th class="'+(c.cls==='n'?'r':'')+'">'+esc(c.h)+'</th>').join('')+(b.edit?'<th></th>':'')+'</tr></thead><tbody>';
+  h+='<div class="tw"><table><thead><tr>'+b.cols.map(c=>'<th class="'+(c.cls==='n'?'r':'')+'">'+esc(c.h)+'</th>').join('')+((b.edit||b.acts)?'<th></th>':'')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     h+='<tr>'+b.cols.map(c=>'<td class="'+(c.cls||'')+'">'+cellHTML(c,r)+'</td>').join('');
-    if(b.edit)h+='<td class="act"><button class="lnk" data-act="edit" data-sec="'+b.edit+'" data-id="'+esc(r.id)+'">Edit</button><button class="lnk del" data-act="del" data-sec="'+b.edit+'" data-id="'+esc(r.id)+'">'+(S.delArm===r.id?'Confirm delete':'Delete')+'</button></td>';
+    if(b.edit||b.acts)h+='<td class="act">'+(b.acts?b.acts(r):stdActs(b.edit,r))+'</td>';
     h+='</tr>';
   });
   h+='</tbody>';
   if(b.cols.some(c=>c.s)){
-    h+='<tfoot><tr>'+b.cols.map((c,i)=>{if(i===0)return '<td>Total</td>';if(!c.s)return '<td></td>';const s=rows.reduce((a,r)=>a+(+c.t(r)||0),0);return '<td class="n">'+esc(c.fmt(s))+'</td>';}).join('')+(b.edit?'<td></td>':'')+'</tr></tfoot>';
+    h+='<tfoot><tr>'+b.cols.map((c,i)=>{if(i===0)return '<td>Total</td>';if(!c.s)return '<td></td>';const s=rows.reduce((a,r)=>a+(+c.t(r)||0),0);return '<td class="n">'+esc(c.fmt(s))+'</td>';}).join('')+((b.edit||b.acts)?'<td></td>':'')+'</tr></tfoot>';
   }
   return h+'</table></div></section>';
 }
@@ -482,7 +499,8 @@ function renderKpis(){
 function renderTabs(){
   const d=D[S.co];
   const cnt={clients:d.clients.size,products:d.products.size,advances:d.advances.size,invoices:d.invoices.size,payments:R.inv.filter(i=>i.pend>TOL).length,dispatches:R.t.openPOs};
-  $('#tabs').innerHTML=SECS.map(s=>'<button class="tab" role="tab" data-act="tab" data-tab="'+s+'" aria-selected="'+(s===S.tab)+'">'+TLAB[s]+'<span class="c">'+cnt[s]+'</span></button>').join('');
+  const tl=SECS.concat(isAdmin()?['admin']:[]);cnt.admin=USERS.size;
+  $('#tabs').innerHTML=tl.map(s=>'<button class="tab" role="tab" data-act="tab" data-tab="'+s+'" aria-selected="'+(s===S.tab)+'">'+TLAB[s]+'<span class="c">'+cnt[s]+'</span></button>').join('');
 }
 const SOON=3;
 function renderBanner(){
@@ -548,8 +566,8 @@ function buildAll(){recompute();renderCos();renderKpis();renderTabs();renderBann
 function buildPanel(){
   const t=S.tab;
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
-    (S.blocks&&(t==='advances'||t==='invoices'||t==='payments'||t==='dispatches')?'<input id="q" type="search" placeholder="Search rows" aria-label="Search rows" value="'+esc(S.q)+'">':'')+
-    '<button class="btn primary" data-act="add">'+ADD[t]+'</button></div></div><div id="formHost"></div><div id="listHost"></div>';
+    (S.blocks&&(t==='advances'||t==='invoices'||t==='payments'||t==='dispatches'||t==='admin')?'<input id="q" type="search" placeholder="Search rows" aria-label="Search rows" value="'+esc(S.q)+'">':'')+
+    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
 }
@@ -610,6 +628,7 @@ function prereq(t){
 function showForm(){
   const t=S.form.sec,fh=$('#formHost');
   const row=S.form.id?D[S.co][t].get(S.form.id):null;
+  if(row&&!canModify(row)){toast('You can only edit entries you added.');S.form=null;return;}
   const miss=prereq(t);
   if(miss){fh.innerHTML='<div class="form"><p>'+miss.msg+'</p><div class="fa"><button class="btn primary" data-act="goto" data-tab="'+miss.tab+'">'+miss.btn+'</button><button class="btn" data-act="cancel">Close</button></div></div>';return;}
   fh.innerHTML=FORMS[t](row);
@@ -768,6 +787,7 @@ async function exportCsv(bid){
 /* ---------- events ---------- */
 async function tryDelete(sec,id){
   const d=D[S.co];
+  if(!canModify(d[sec].get(id))){toast('You can only delete entries you added.');return;}
   if(sec==='clients'&&[...d.products.values()].some(p=>p.clientId===id)){toast('Delete this client’s products first.');return;}
   if(sec==='invoices'&&[...d.payments.values()].some(p=>p.invoiceId===id)){toast('This invoice has payments recorded. Delete those first.');return;}
   if(sec==='products'){
@@ -777,6 +797,7 @@ async function tryDelete(sec,id){
   await del(sec,id);
 }
 async function clearSamples(){
+  if(!isAdmin()){toast('Only the admin can clear example rows.');return;}
   const k=S.co;const jobs=[];
   SECS.forEach(s=>D[k][s].forEach((r,id)=>{if(r.sample)jobs.push([s,id]);}));
   for(const j of jobs){
@@ -789,7 +810,14 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
   const act=a.dataset.act;
   if(act==='co'){S.co=a.dataset.co;S.form=null;S.q='';saveUI();buildAll();}
-  else if(act==='tab'||act==='goto'){S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
+  else if(act==='urole'){const u=USERS.get(a.dataset.id);if(isAdmin()&&u&&u.id!==ME.id)putUser(Object.assign({},u,{role:u.role==='admin'?'user':'admin'})).then(ok=>{if(ok){toast(u.user+' is now '+(u.role==='admin'?'a user':'an admin'));refresh();}});}
+  else if(act==='upw'){if(isAdmin())showPwReset(a.dataset.id);}
+  else if(act==='udel'){
+    const id=a.dataset.id,key='u:'+id;
+    if(S.delArm===key){S.delArm=null;clearTimeout(delTimer);if(isAdmin()&&ME&&id!==ME.id)removeUser(id).then(ok=>{if(ok){toast('User deleted');refresh();}});}
+    else{S.delArm=key;clearTimeout(delTimer);delTimer=setTimeout(()=>{S.delArm=null;renderList();},4000);renderList();}
+  }
+  else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
   else if(act==='add'){S.form={sec:S.tab,id:null};showForm();}
   else if(act==='remind'){S.form=null;showReminder(a.dataset.id);}
   else if(act==='openmail'){openMail();}
@@ -859,73 +887,171 @@ function subscribeAll(){
   }));
 }
 
-/* ---------- login gate ---------- */
-const AUTH_KEY='orderdesk:auth',SESS_KEY='orderdesk:session';
+/* ---------- accounts and login gate ---------- */
+const USERS_KEY='orderdesk:users',AUTH_KEY='orderdesk:auth',SESS_KEY='orderdesk:session';
 const b64=u=>btoa(String.fromCharCode.apply(null,u));
 const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function hashPw(pw,salt){
   const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);
   return b64(new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:salt,iterations:150000,hash:'SHA-256'},k,256)));
 }
-let authMem=null;
-const getAuth=()=>{try{const r=localStorage.getItem(AUTH_KEY);if(r)return JSON.parse(r);}catch(e){}return authMem;};
-const setAuth=a=>{authMem=a;try{if(a)localStorage.setItem(AUTH_KEY,JSON.stringify(a));else localStorage.removeItem(AUTH_KEY);}catch(e){}};
-const hasSession=()=>{try{return sessionStorage.getItem(SESS_KEY)==='1';}catch(e){return false;}};
-const setSession=v=>{try{if(v)sessionStorage.setItem(SESS_KEY,'1');else sessionStorage.removeItem(SESS_KEY);}catch(e){}};
+let USERS=new Map(),ME=null,usersReady=false,gateMode='login';
+const slug=u=>String(u||'').trim().toLowerCase();
+const validUser=u=>/^[a-z0-9_.-]{3,30}$/i.test(u);
+const isAdmin=()=>!!ME&&ME.role==='admin';
+const canModify=r=>!!ME&&(ME.role==='admin'||(!!r&&!!r.createdBy&&r.createdBy===ME.id));
+const whoName=r=>r&&r.createdBy?((USERS.get(r.createdBy)||{}).user||r.createdByName||'a user'):'admin';
+const hasSession=()=>{try{return sessionStorage.getItem(SESS_KEY)||'';}catch(e){return '';}};
+const setSession=v=>{try{if(v)sessionStorage.setItem(SESS_KEY,v);else sessionStorage.removeItem(SESS_KEY);}catch(e){}};
+function saveLocalUsers(){try{localStorage.setItem(USERS_KEY,JSON.stringify([...USERS.values()]));}catch(e){}}
+function loadLocalUsers(){
+  try{JSON.parse(localStorage.getItem(USERS_KEY)||'[]').forEach(u=>USERS.set(u.id,u));}catch(e){}
+  if(!USERS.size){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');if(a&&a.user&&a.salt&&a.hash){USERS.set(slug(a.user),{id:slug(a.user),user:a.user,salt:a.salt,hash:a.hash,role:'admin',created:todayStr()});saveLocalUsers();}}catch(e){}}
+}
+async function putUser(u){
+  const prev=USERS.get(u.id);USERS.set(u.id,u);
+  if(store){try{await store.collection('users').doc(u.id).set(u);}catch(e){if(prev)USERS.set(u.id,prev);else USERS.delete(u.id);toast('Could not save: '+((e&&(e.message||e.code))||'unknown error'));return false;}}
+  else saveLocalUsers();
+  return true;
+}
+async function removeUser(id){
+  const prev=USERS.get(id);USERS.delete(id);
+  if(store){try{await store.collection('users').doc(id).delete();}catch(e){if(prev)USERS.set(id,prev);toast('Could not delete the user.');return false;}}
+  else saveLocalUsers();
+  return true;
+}
+function subscribeUsers(){
+  store.collection('users').onSnapshot(snap=>{
+    const m=new Map();snap.docs.forEach(doc=>{m.set(doc.id,Object.assign({},doc.data(),{id:doc.id}));});
+    USERS=m;
+    const first=!usersReady;usersReady=true;
+    if(first){gateReady();return;}
+    if(ME){
+      if(!USERS.has(ME.id)){ME=null;setSession('');showGate();return;}
+      ME=USERS.get(ME.id);renderWho();if(S.tab==='admin'&&!isAdmin())S.tab='clients';
+    }else if(!$('#gate').hidden){showGate();}
+    if(R)refresh();
+  },err=>{usersReady=true;toast('Live users stopped: '+((err&&err.code)||'unknown'));gateReady();});
+}
+function renderWho(){const w=$('#who');if(w)w.textContent=ME?ME.user+' · '+(ME.role==='admin'?'Admin':'User'):'';}
 function lockApp(locked){
   const w=document.querySelector('.wrap'),g=$('#gate'),t=$('#toast');
   w.hidden=locked;g.hidden=!locked;if(locked)t.hidden=true;
 }
+function afterLogin(){
+  lockApp(false);renderWho();
+  if(S.tab==='admin'&&!isAdmin())S.tab='clients';
+  S.form=null;buildAll();
+}
+function gateReady(){
+  const sid=hasSession();
+  if(sid&&USERS.has(sid)){ME=USERS.get(sid);afterLogin();}else showGate();
+}
 function showGate(){
-  const a=getAuth(),create=!a;
   lockApp(true);
-  $('#gt').textContent=create?'Create your login':'Welcome back';
-  $('#gsub').textContent=create?'Set one username and password for this desk. You will use it every time you open the app.':'Log in to open the desk.';
+  const go=$('#g_go'),form=$('#gform');
+  if(!usersReady){$('#gt').textContent='Loading…';$('#gsub').textContent='';form.hidden=true;$('#gfoot').textContent='';return;}
+  form.hidden=false;
+  const first=USERS.size===0,create=first||gateMode==='signup';
+  $('#gt').textContent=first?'Create the admin login':(create?'Create your account':'Welcome back');
+  $('#gsub').textContent=first?'This first account becomes the admin. The admin can edit or delete any entry and manage other users.':(create?'You can edit or delete only the entries you add. The admin can manage everything.':'Log in to open the desk.');
   $('#g_c_wrap').hidden=!create;
-  $('#g_go').textContent=create?'Create login':'Log in';
+  go.textContent=create?(first?'Create admin login':'Sign up'):'Log in';
   $('#g_pass').autocomplete=create?'new-password':'current-password';
   $('#g_err').textContent='';$('#g_pass').value='';$('#g_conf').value='';
-  if(!create)$('#g_user').value=a.user;
-  $('#gfoot').innerHTML=create?'The login is saved on this device. Choose a password you will remember.':'<button type="button" class="lnk" id="g_forgot">Forgot password?</button>';
-  setTimeout(()=>{const f=create||!$('#g_user').value?$('#g_user'):$('#g_pass');if(f)f.focus();},0);
+  $('#g_pass').type=$('#g_conf').type='password';$('#g_show').textContent='Show';
+  let f='';
+  if(!first)f+=create?'Already have an account? <button type="button" class="lnk" data-gate="login">Log in</button>':'New here? <button type="button" class="lnk" data-gate="signup">Sign up</button> &nbsp;·&nbsp; <button type="button" class="lnk" id="g_forgot">Forgot password?</button>';
+  else f+='The login is saved '+(store?'in the shared store':'on this device')+'. Choose a password you will remember.';
+  $('#gfoot').innerHTML=f;
+  setTimeout(()=>{$('#g_user').focus();},0);
 }
 async function submitGate(e){
   e.preventDefault();
-  const a=getAuth(),err=$('#g_err'),user=$('#g_user').value.trim(),pw=$('#g_pass').value;
+  const err=$('#g_err'),user=$('#g_user').value.trim(),pw=$('#g_pass').value;
   err.textContent='';
+  if(!usersReady)return;
   if(!(window.crypto&&crypto.subtle)){err.textContent='This browser cannot create a secure login. Open the page in an up-to-date browser.';return;}
-  if(!a){
-    if(user.length<3)return void(err.textContent='Username needs at least 3 characters.');
+  const first=USERS.size===0,create=first||gateMode==='signup';
+  if(create){
+    if(!validUser(user))return void(err.textContent='Username needs 3 to 30 letters, numbers, dots, dashes or underscores.');
     if(pw.length<6)return void(err.textContent='Password needs at least 6 characters.');
     if(pw!==$('#g_conf').value)return void(err.textContent='The two passwords do not match.');
+    if(USERS.has(slug(user)))return void(err.textContent='That username is taken. Choose another.');
     const salt=crypto.getRandomValues(new Uint8Array(16));
-    setAuth({user:user,salt:b64(salt),hash:await hashPw(pw,salt)});
-    setSession(true);lockApp(false);toast('Login created');
+    const u={id:slug(user),user:user,salt:b64(salt),hash:await hashPw(pw,salt),role:first?'admin':'user',created:todayStr()};
+    if(!(await putUser(u)))return;
+    ME=u;setSession(u.id);gateMode='login';afterLogin();toast(first?'Admin login created':'Account created');
   }else{
-    if(user.toLowerCase()!==a.user.toLowerCase()||await hashPw(pw,unb64(a.salt))!==a.hash){err.textContent='Username or password is not correct.';$('#g_pass').select();return;}
-    setSession(true);lockApp(false);
+    const u=USERS.get(slug(user));
+    if(!u||await hashPw(pw,unb64(u.salt))!==u.hash){err.textContent='Username or password is not correct.';$('#g_pass').select();return;}
+    ME=u;setSession(u.id);afterLogin();
   }
+}
+async function setUserPassword(uid,pw){
+  const u=USERS.get(uid);if(!u)return false;
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  return putUser(Object.assign({},u,{salt:b64(salt),hash:await hashPw(pw,salt)}));
 }
 function initGate(){
   $('#gform').addEventListener('submit',submitGate);
   $('#g_show').addEventListener('click',()=>{const p=$('#g_pass'),c=$('#g_conf'),h=p.type==='password';p.type=c.type=h?'text':'password';$('#g_show').textContent=h?'Hide':'Show';});
   document.addEventListener('click',e=>{
-    if(e.target.id==='g_forgot'){
-      $('#gfoot').innerHTML='To remove this login and create a new one, type RESET. Your companies, invoices and payments stay as they are.<span class="gout"><input id="g_reset" type="text" autocomplete="off" aria-label="Type RESET"><button type="button" class="btn sm" id="g_reset_go">Remove login</button></span>';
-      $('#g_reset').focus();
+    const t=e.target;
+    if(t.dataset&&t.dataset.gate){gateMode=t.dataset.gate;showGate();}
+    if(t.id==='g_forgot'){
+      $('#gfoot').innerHTML=store?'Ask the admin to reset your password from the Admin page. If the admin forgot theirs, ask Claude to reset it.':'Ask the admin to reset your password from the Admin page. If the admin forgot theirs, type RESET to remove all logins on this device and start again. Your companies, invoices and payments stay as they are.<span class="gout"><input id="g_reset" type="text" autocomplete="off" aria-label="Type RESET"><button type="button" class="btn sm" id="g_reset_go">Remove all logins</button></span>';
+      const r=$('#g_reset');if(r)r.focus();
     }
-    if(e.target.id==='g_reset_go'){
+    if(t.id==='g_reset_go'){
       if($('#g_reset').value.trim().toUpperCase()!=='RESET'){$('#g_err').textContent='Type RESET to confirm.';return;}
-      setAuth(null);setSession(false);showGate();
+      USERS=new Map();saveLocalUsers();try{localStorage.removeItem(AUTH_KEY);}catch(x){}setSession('');ME=null;gateMode='login';showGate();
     }
-    if(e.target.closest&&e.target.closest('[data-act="logout"]')){setSession(false);S.form=null;showGate();}
+    if(t.closest&&t.closest('[data-act="logout"]')){ME=null;setSession('');S.form=null;gateMode='login';showGate();}
   });
-  if(hasSession()&&getAuth())lockApp(false);else showGate();
+  document.addEventListener('submit',async e=>{
+    if(e.target.id!=='pwf')return;
+    e.preventDefault();
+    const pw=$('#rp_pw').value;
+    if(pw.length<6){$('#ferr').textContent='Password needs at least 6 characters.';return;}
+    if(await setUserPassword(e.target.dataset.uid,pw)){S.form=null;$('#formHost').innerHTML='';toast('Password changed');}
+  });
+  showGate();
 }
+
+/* ---------- admin ---------- */
+function stdActs(sec,r){
+  if(canModify(r))return '<button class="lnk" data-act="edit" data-sec="'+sec+'" data-id="'+esc(r.id)+'">Edit</button><button class="lnk del" data-act="del" data-sec="'+sec+'" data-id="'+esc(r.id)+'">'+(S.delArm===r.id?'Confirm delete':'Delete')+'</button>';
+  return '<span class="muted">Added by '+esc(whoName(r))+'</span>';
+}
+function countBy(uid){let n=0;COS.forEach(c=>SECS.forEach(s=>D[c.key][s].forEach(r=>{if(r.createdBy===uid)n++;})));return n;}
+function userActs(u){
+  if(ME&&u.id===ME.id)return '<span class="muted">You</span>';
+  const arm=S.delArm==='u:'+u.id;
+  return '<button class="lnk" data-act="urole" data-id="'+esc(u.id)+'">'+(u.role==='admin'?'Make user':'Make admin')+'</button><button class="lnk" data-act="upw" data-id="'+esc(u.id)+'">Reset password</button><button class="lnk del" data-act="udel" data-id="'+esc(u.id)+'">'+(arm?'Confirm delete':'Delete')+'</button>';
+}
+function adminEntries(){
+  const d=D[S.co],out=[],P=d.products;
+  const pn=id=>{const p=P.get(id);return p?p.name:'(removed product)';};
+  const push=(sec,label,r,text,date)=>out.push({id:r.id,sec:sec,label:label,text:text,date:date||'',rec:r});
+  d.clients.forEach(r=>push('clients','Client',r,r.name+(r.brand?' · '+r.brand:''),''));
+  d.products.forEach(r=>push('products','Product',r,r.name,''));
+  d.advances.forEach(r=>push('advances','Advance',r,pn(r.productId)+' · PO '+r.po+' · '+inr(r.received),r.date));
+  d.invoices.forEach(r=>push('invoices','Invoice',r,'Invoice '+r.invNo+' · '+pn(r.productId)+' · PO '+r.po+' · qty '+qty(r.qty),r.date));
+  d.payments.forEach(r=>{const iv=d.invoices.get(r.invoiceId);push('payments','Payment',r,inr(r.amount)+' · invoice '+(iv?iv.invNo:'(removed)'),r.date);});
+  d.dispatches.forEach(r=>push('dispatches','Dispatch',r,pn(r.productId)+' · PO '+r.po+' · qty '+qty(r.qty)+(r.lr?' · LR '+r.lr:''),r.date));
+  return out.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+}
+function showPwReset(uid){
+  const u=USERS.get(uid);if(!u)return;
+  $('#formHost').innerHTML='<form id="pwf" class="form" data-uid="'+esc(uid)+'" novalidate><h3>Reset password for '+esc(u.user)+'</h3><div class="grid"><div class="f"><label for="rp_pw">New password</label><input id="rp_pw" type="text" autocomplete="off"></div></div><div class="fa"><button class="btn primary" type="submit">Save password</button><button class="btn" type="button" data-act="cancel">Cancel</button><span id="ferr" class="ferr" role="alert"></span></div><p class="muted">Tell the user their new password. They can log in with it straight away.</p></form>';
+  $('#rp_pw').focus();
+}
+
 initGate();
 loadUI();
 buildAll();
-loadLocal();
+loadLocal();loadLocalUsers();usersReady=true;gateReady();
 buildAll();
 })();
 </script>
