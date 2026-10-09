@@ -150,8 +150,8 @@ const TLAB={clients:'Client / Brand',products:'Products',advances:'Advance',invo
 const ADD={clients:'Add client',products:'Add product',advances:'Add advance received',invoices:'Add invoice',dispatches:'Log dispatch'};
 const INTRO={
   clients:'The brands and companies you supply. Products, advances and invoices all sit under a client.',
-  products:'Final cost, advance per unit and payment terms for each product. Advance and invoices read from here.',
-  advances:'Advance received against each PO, in as many parts as it arrives. Required advance = PO quantity × advance per unit.',
+  products:'Final cost, advance % and payment terms for each product. Advance and invoices read from here.',
+  advances:'Advance received against each PO, in as many parts as it arrives. Required advance = PO quantity × final cost × advance %.',
   invoices:'Each invoice takes cost and payment terms from the product, adds 18% GST and adjusts the advance already received for that PO.',
   dispatches:'What is still to ship against each PO, and the dispatches already logged.'
 };
@@ -164,6 +164,8 @@ const nf2=new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFraction
 const nf0=new Intl.NumberFormat('en-IN',{maximumFractionDigits:0});
 const inr=v=>'₹'+nf2.format(v||0);
 const qty=v=>nf0.format(v||0);
+const advUnit=p=>{if(!p)return 0;const c=+p.cost||0;if(p.advPct!=null&&p.advPct!=='')return c*(+p.advPct||0)/100;return +p.advPerUnit||0;};
+const advPctOf=p=>{if(!p)return null;if(p.advPct!=null&&p.advPct!=='')return +p.advPct;const c=+p.cost||0;return c>0?(+p.advPerUnit||0)/c*100:null;};
 const pct=v=>(Math.round(v*10)/10).toFixed(1)+'%';
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const fd=s=>{if(!s)return '—';const p=s.split('-').map(Number);return String(p[2]).padStart(2,'0')+'-'+MON[p[1]-1]+'-'+String(p[0]).slice(2);};
@@ -231,7 +233,7 @@ function calc(d){
 
   const inv=[...d.invoices].sort(srt).map(i=>{
     const p=prod(i.productId),g=G(i.po,i.productId);
-    const q=+i.qty||0,cost=p?+p.cost||0:0,au=p?+p.advPerUnit||0:0;
+    const q=+i.qty||0,cost=p?+p.cost||0:0,au=advUnit(p);
     g.invQty+=q;
     const nonGst=q*cost,extra=+i.extra||0,gst=(nonGst+extra)*GST,total=nonGst+extra+gst;
     const avail=Math.max(0,g.received-g.adjusted);
@@ -248,7 +250,7 @@ function calc(d){
 
   groups.forEach(g=>{
     const p=prod(g.pid);
-    g.p=p;g.c=cli(p);g.advUnit=p?+p.advPerUnit||0:0;
+    g.p=p;g.c=cli(p);g.advUnit=advUnit(p);
     g.required=g.poQty*g.advUnit;g.orderValue=g.poQty*g.poRate;
     g.pending=Math.max(0,g.required-g.received);g.excess=Math.max(0,g.received-g.required);
     g.recvPct=g.required>0?g.received/g.required*100:null;
@@ -302,10 +304,10 @@ function blocks(){
     return [{id:'products',name:'products',title:'Products',edit:'products',
       rows:[...d.products.values()].sort((a,b)=>cn(a.clientId).localeCompare(cn(b.clientId))||byName(a,b)),
       cols:[{h:'Client',t:r=>cn(r.clientId)},{h:'Product',t:r=>r.name,r:r=>'<strong>'+esc(r.name)+'</strong>'},
-        {h:'Final cost / unit',t:r=>+r.cost||0,cls:'n',fmt:inr},{h:'Advance / unit',t:r=>+r.advPerUnit||0,cls:'n',fmt:inr},
-        {h:'Advance %',t:r=>r.cost>0?r.advPerUnit/r.cost*100:null,cls:'n',fmt:pct},
+        {h:'Final cost / unit',t:r=>+r.cost||0,cls:'n',fmt:inr},{h:'Advance %',t:r=>advPctOf(r),cls:'n',fmt:pct},
+        {h:'Advance / unit',t:r=>advUnit(r),cls:'n',fmt:inr},
         {h:'Payment terms (days)',t:r=>+r.terms||0,cls:'n',fmt:qty}],
-      empty:['No products yet','Add each product with its final cost, advance per unit and payment terms.']}];
+      empty:['No products yet','Add each product with its final cost, advance % and payment terms.']}];
   }
   if(t==='advances'){
     const chipAdv=g=>g.required<=0?chip('n0','No advance set'):(g.pending<=TOL?(g.excess>TOL?chip('warn','Excess '+inr(g.excess)):chip('ok','Complete')):chip('warn','Pending'));
@@ -455,7 +457,7 @@ const FORMS={
       sel('p_client','Client *',[{v:'',t:'Select client'}].concat(clients.map(c=>({v:c.id,t:c.name}))),r.clientId||(clients.length===1?clients[0].id:''))+
       fld('p_name','Product name *','text',r.name,'autocomplete="off"')+
       fld('p_cost','Final cost per unit (₹) *','number',r.cost==null?'':r.cost,NUM)+
-      fld('p_adv','Advance per unit (₹) *','number',r.advPerUnit==null?'':r.advPerUnit,NUM,1)+
+      fld('p_adv','Advance (% of final cost) *','number',advPctOf(r)==null?'':Math.round(advPctOf(r)*100)/100,NUM,1)+
       fld('p_terms','Payment terms (days)','number',r.terms==null?30:r.terms,'inputmode="numeric" step="1" min="0"'));},
   advances:r=>{r=r||{};return wrapForm(r.id?'Edit advance entry':'New advance received',
     chainHTML(r)+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
@@ -516,7 +518,7 @@ const PREV={
     if(!pid||!po||!pq){el.innerHTML='<span class="muted">Pick the product, then enter the PO number and quantity to see the advance position.</span>';return;}
     const row={id:draftId(),date:val('a_date')||todayStr(),productId:pid,po:po,poQty:pq,poRate:num('a_rate'),received:num('a_recv'),note:''};
     const g=findGroup(sim('advances',row),po,pid);
-    if(!g||g.advUnit<=0){el.innerHTML='<span class="muted">This product has no advance per unit set. Edit the product first.</span>';return;}
+    if(!g||g.advUnit<=0){el.innerHTML='<span class="muted">This product has no advance % set. Edit the product first.</span>';return;}
     el.innerHTML=pv('Advance required',inr(g.required))+pv('Received incl. this entry',inr(g.received))+pv('Still pending',inr(g.pending))+(g.excess>TOL?pv('Excess received',inr(g.excess)):'');
   },
   invoices:()=>{
@@ -555,7 +557,7 @@ function bindForm(t,row){
     p();
   }
   if(t==='products'){
-    const u=()=>{const c=num('p_cost'),a=num('p_adv'),h=$('#p_adv_h');if(h)h.textContent=c>0?pct(a/c*100)+' of final cost':'';};
+    const u=()=>{const c=num('p_cost'),a=num('p_adv'),h=$('#p_adv_h');if(h)h.textContent=c>0?'= '+inr(c*a/100)+' per unit':'';};
     f.addEventListener('input',u);u();
   }
 }
@@ -570,10 +572,10 @@ function readForm(sec){
     if(!clientId)return {err:'Select the client.'};
     if(!name)return {err:'Product name is required.'};
     if(!(cost>0))return {err:'Enter the final cost per unit.'};
-    if(adv>cost)return {err:'Advance per unit cannot be more than the final cost.'};
+    if(adv>100)return {err:'Advance cannot be more than 100% of the final cost.'};
     const dup=[...D[S.co].products.values()].some(p=>p.id!==id&&p.clientId===clientId&&norm(p.name)===norm(name));
     if(dup)return {err:'This client already has a product with that name.'};
-    return {row:{id:id,clientId:clientId,name:name,cost:cost,advPerUnit:adv,terms:Math.max(0,parseInt(val('p_terms'),10)||0)}};
+    return {row:{id:id,clientId:clientId,name:name,cost:cost,advPct:adv,terms:Math.max(0,parseInt(val('p_terms'),10)||0)}};
   }
   const pid=val('f_product'),po=val('f_po');
   if(!pid)return {err:'Select the client and product.'};

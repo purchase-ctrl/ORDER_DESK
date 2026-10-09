@@ -16,8 +16,8 @@ Data is saved in the browser you use, on that device only. To move it to another
 
 ## How the numbers work
 
-- Advance required = PO quantity x advance per unit (set on the product).
+- Advance required = PO quantity x final cost x advance % (set on the product).
 - Invoice: non-GST = quantity x final cost; GST = 18% on (non-GST + freight/development charges).
-- Advance adjusted = invoice quantity x advance per unit, never more than the advance actually received for that PO and product.
+- Advance adjusted = invoice quantity x final cost x advance %, never more than the advance actually received for that PO and product.
 - Net receivable = invoice total - advance adjusted. Due date = invoice date + the product's payment terms.
 - Pending dispatch = PO quantity - dispatched quantity.
