@@ -272,14 +272,15 @@ tfoot td{background:var(--head);font-weight:600;border-top:1px solid var(--line)
 
 /* ---------- constants ---------- */
 const COS=[{key:'si',name:'Sunshine Industries'},{key:'scp',name:'Sunshine Cosmetics Pvt Ltd'},{key:'di',name:'Dyana International'}];
-const SECS=['clients','products','advances','invoices','dispatches'];
-const TLAB={clients:'Client / Brand',products:'Products',advances:'Advance',invoices:'Daily Invoicing',dispatches:'Pending Dispatch'};
-const ADD={clients:'Add client',products:'Add product',advances:'Add advance received',invoices:'Add invoice',dispatches:'Log dispatch'};
+const SECS=['clients','products','advances','invoices','payments','dispatches'];
+const TLAB={clients:'Client / Brand',products:'Products',advances:'Advance',invoices:'Daily Invoicing',payments:'Payment Status',dispatches:'Pending Dispatch'};
+const ADD={clients:'Add client',products:'Add product',advances:'Add advance received',invoices:'Add invoice',payments:'Record payment',dispatches:'Log dispatch'};
 const INTRO={
   clients:'The brands and companies you supply. Products, advances and invoices all sit under a client.',
   products:'Final cost, advance % and payment terms for each product. Advance and invoices read from here.',
   advances:'Advance received against each PO, in as many parts as it arrives. Required advance = PO quantity × final cost × advance %.',
   invoices:'Each invoice takes cost and payment terms from the product, adds 18% GST and adjusts the advance already received for that PO.',
+  payments:'Every invoice with what is due, what has been received and what is still pending. Record each payment as it comes in.',
   dispatches:'What is still to ship against each PO, and the dispatches already logged.'
 };
 const GST=0.18, TOL=1;
@@ -343,7 +344,7 @@ async function del(sec,id){
 /* ---------- calculations ---------- */
 function dataFor(key,over){
   const d=D[key];
-  const o={clients:d.clients,products:d.products,advances:[...d.advances.values()],invoices:[...d.invoices.values()],dispatches:[...d.dispatches.values()]};
+  const o={clients:d.clients,products:d.products,advances:[...d.advances.values()],invoices:[...d.invoices.values()],payments:[...d.payments.values()],dispatches:[...d.dispatches.values()]};
   if(over){o[over.sec]=o[over.sec].filter(r=>r.id!==over.row.id);o[over.sec].push(over.row);}
   return o;
 }
@@ -358,6 +359,7 @@ function calc(d){
   const adv=[...d.advances].sort(srt);
   adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;});
 
+  const payBy=new Map();d.payments.forEach(x=>payBy.set(x.invoiceId,(payBy.get(x.invoiceId)||0)+(+x.amount||0)));
   const inv=[...d.invoices].sort(srt).map(i=>{
     const p=prod(i.productId),g=G(i.po,i.productId);
     const q=+i.qty||0,cost=p?+p.cost||0:0,au=advUnit(p);
@@ -366,13 +368,16 @@ function calc(d){
     const avail=Math.max(0,g.received-g.adjusted);
     const adj=Math.min(q*au,nonGst,avail);
     g.adjusted+=adj;
-    const net=total-adj,paid=+i.paid||0,pend=Math.max(0,net-paid);
+    const net=total-adj,paid=(+i.paid||0)+(payBy.get(i.id)||0),pend=Math.max(0,net-paid);
     const due=i.date?addDays(i.date,p?+p.terms||0:0):'';
-    return Object.assign({},i,{p:p,c:cli(p),g:g,q:q,nonGst:nonGst,extra:extra,gst:gst,total:total,adj:adj,net:net,paid:paid,pend:pend,due:due,
+    return Object.assign({},i,{p:p,c:cli(p),g:g,q:q,nonGst:nonGst,extra:extra,gst:gst,total:total,adj:adj,net:net,paid:paid,legacyPaid:+i.paid||0,pend:pend,due:due,
       remain:g.poQty>0?g.poQty-g.invQty:null,advLeft:g.received-g.adjusted,
       status:pend<=TOL?'Paid':(paid>0?'Partial':'Unpaid')});
   });
 
+  const invById=new Map(inv.map(i=>[i.id,i]));const payRun=new Map();
+  const pay=[...d.payments].sort(srt).map(x=>{const i=invById.get(x.invoiceId)||null;const cum=(payRun.get(x.invoiceId)||0)+(+x.amount||0);payRun.set(x.invoiceId,cum);
+    return Object.assign({},x,{i:i,p:i?i.p:null,c:i?i.c:null,amt:+x.amount||0,pendAfter:i?Math.max(0,i.net-i.legacyPaid-cum):null});});
   const dis=[...d.dispatches].sort(srt).map(x=>{const p=prod(x.productId),g=G(x.po,x.productId);const q=+x.qty||0;g.logQty+=q;return Object.assign({},x,{p:p,c:cli(p),q:q});});
 
   groups.forEach(g=>{
@@ -408,7 +413,7 @@ function calc(d){
     openPOs:gl.filter(g=>g.pendDisp>0).length,
     poCount:gl.filter(g=>g.hasAdv).length
   };
-  return {groups:gl,advRows:advRows,inv:inv,dis:dis,t:t};
+  return {groups:gl,advRows:advRows,inv:inv,pay:pay,dis:dis,t:t};
 }
 function recompute(){R=calc(dataFor(S.co));}
 
@@ -456,6 +461,22 @@ function blocks(){
         empty:['No advance entries yet','Log each part payment against its PO as it arrives. The pending share is worked out as of each date.']}
     ];
   }
+  if(t==='payments'){
+    const open=R.inv.filter(i=>S.showDone||i.pend>TOL).sort((a,b)=>String(a.due||'9').localeCompare(String(b.due||'9')));
+    const stChip=r=>{if(r.pend<=TOL)return chip('ok','Paid');const dd=r.due?daysBetween(today,r.due):null;if(dd!=null&&dd<0)return chip('bad',(-dd)+'d overdue');return chip(r.paid>0?'warn':'n0',r.paid>0?'Part paid':'Unpaid');};
+    return [{id:'pay-status',name:'payment status',title:'Invoice payment status',rows:open,
+      extra:'<label class="chk"><input type="checkbox" id="showdone"'+(S.showDone?' checked':'')+'> Show paid invoices</label>',
+      cols:[{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},
+        {h:'Due date',t:r=>r.due,fmt:fd},{h:'Amount due',t:r=>r.net,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.paid,cls:'n',fmt:inr,s:1},{h:'Pending',t:r=>r.pend,cls:'n',fmt:inr,s:1},
+        {h:'Status',t:r=>r.pend<=TOL?'Paid':(r.due&&daysBetween(today,r.due)<0?'Overdue':(r.paid>0?'Part paid':'Unpaid')),r:stChip},
+        {h:'',t:r=>'',r:r=>'<button class="btn sm" data-act="payfor" data-id="'+esc(r.id)+'">Record payment</button>'}],
+      empty:['No pending payments','Every invoice is paid, or no invoice has been raised yet. Add invoices in Daily Invoicing.']},
+     {id:'pay-log',name:'payment log',title:'Payments received',edit:'payments',search:1,rows:R.pay,
+      cols:[{h:'Date received',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.i?r.i.invNo:'(removed invoice)',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.i?r.i.po:'',cls:'mono'},
+        {h:'Amount received',t:r=>r.amt,cls:'n',fmt:inr,s:1},{h:'Mode',t:r=>r.mode},{h:'Reference',t:r=>r.ref,cls:'mono'},
+        {h:'Pending on invoice after this',t:r=>r.pendAfter,cls:'n',fmt:inr},{h:'Note',t:r=>r.note,cls:'wrap'}],
+      empty:['No payments recorded','Use Record payment on an invoice above. Each payment reduces that invoice’s pending amount.']}];
+  }
   if(t==='invoices'){
     return [{id:'invoices',name:'invoices',title:'Invoices',edit:'invoices',search:1,rows:R.inv,
       cols:[{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},
@@ -465,7 +486,6 @@ function blocks(){
         {h:'Invoice total',t:r=>r.total,cls:'n',fmt:inr,s:1},{h:'Advance adjusted',t:r=>r.adj,cls:'n',fmt:inr,s:1},{h:'Advance left on PO',t:r=>r.advLeft,cls:'n',fmt:inr},
         {h:'Net receivable',t:r=>r.net,cls:'n',fmt:inr,s:1},
         {h:'Due date',t:r=>r.due,r:r=>{if(!r.due)return '—';const dd=daysBetween(today,r.due);return esc(fd(r.due))+(r.pend>TOL?(dd<0?' '+chip('bad',(-dd)+'d overdue'):' '+chip('n0','in '+dd+'d')):'');}},
-        {h:'Payment received',t:r=>r.paid,cls:'n',fmt:inr,s:1},{h:'Pending amount',t:r=>r.pend,cls:'n',fmt:inr,s:1},
         {h:'Status',t:r=>r.status,r:r=>chip(r.status==='Paid'?'ok':(r.status==='Partial'?'warn':'bad'),r.status)}],
       empty:['No invoices yet','Add the first invoice. GST, due date and advance adjustment are worked out from the product and PO details.']}];
   }
@@ -538,7 +558,7 @@ function renderKpis(){
 }
 function renderTabs(){
   const d=D[S.co];
-  const cnt={clients:d.clients.size,products:d.products.size,advances:d.advances.size,invoices:d.invoices.size,dispatches:R.t.openPOs};
+  const cnt={clients:d.clients.size,products:d.products.size,advances:d.advances.size,invoices:d.invoices.size,payments:R.inv.filter(i=>i.pend>TOL).length,dispatches:R.t.openPOs};
   $('#tabs').innerHTML=SECS.map(s=>'<button class="tab" role="tab" data-act="tab" data-tab="'+s+'" aria-selected="'+(s===S.tab)+'">'+TLAB[s]+'<span class="c">'+cnt[s]+'</span></button>').join('');
 }
 function renderBanner(){
@@ -554,7 +574,7 @@ function buildAll(){recompute();renderCos();renderKpis();renderTabs();renderBann
 function buildPanel(){
   const t=S.tab;
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
-    (S.blocks&&(t==='advances'||t==='invoices'||t==='dispatches')?'<input id="q" type="search" placeholder="Search rows" aria-label="Search rows" value="'+esc(S.q)+'">':'')+
+    (S.blocks&&(t==='advances'||t==='invoices'||t==='payments'||t==='dispatches')?'<input id="q" type="search" placeholder="Search rows" aria-label="Search rows" value="'+esc(S.q)+'">':'')+
     '<button class="btn primary" data-act="add">'+ADD[t]+'</button></div></div><div id="formHost"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
@@ -593,8 +613,14 @@ const FORMS={
     area('a_note','Note',r.note),true);},
   invoices:r=>{r=r||{};return wrapForm(r.id?'Edit invoice':'New invoice',
     chainHTML(r)+fld('i_no','Invoice number *','text',r.invNo,'autocomplete="off"')+fld('i_date','Invoice date *','date',r.date||todayStr())+
-    fld('i_qty','Invoice quantity *','number',r.qty==null?'':r.qty,NUM)+fld('i_extra','Freight + development charges (₹)','number',r.extra==null?'':r.extra,NUM)+
-    fld('i_paid','Payment received (₹)','number',r.paid==null?'':r.paid,NUM),true);},
+    fld('i_qty','Invoice quantity *','number',r.qty==null?'':r.qty,NUM)+fld('i_extra','Freight + development charges (₹)','number',r.extra==null?'':r.extra,NUM),true);},
+  payments:r=>{r=r||{};
+    const opts=R.inv.filter(i=>i.pend>TOL||i.id===r.invoiceId||i.id===(S.form&&S.form.inv)).sort((a,b)=>String(a.due||'').localeCompare(String(b.due||''))).map(i=>({v:i.id,t:i.invNo+' · '+cl(i)+' · '+pr(i)+' · PO '+i.po+' · pending '+inr(i.pend)}));
+    return wrapForm(r.id?'Edit payment':'Record payment',
+      sel('pm_inv','Invoice *',[{v:'',t:'Select invoice'}].concat(opts),r.invoiceId||(S.form&&S.form.inv)||'')+
+      fld('pm_date','Date received *','date',r.date||todayStr())+fld('pm_amt','Amount received (₹) *','number',r.amount==null?'':r.amount,NUM)+
+      sel('pm_mode','Mode',['Bank transfer','UPI','Cheque','Cash','Other'].map(x=>({v:x,t:x})),r.mode||'Bank transfer')+
+      fld('pm_ref','Reference (UTR / cheque no.)','text',r.ref,'autocomplete="off"')+fld('pm_note','Note','text',r.note),true);},
   dispatches:r=>{r=r||{};return wrapForm(r.id?'Edit dispatch':'Log dispatch',
     chainHTML(r)+fld('d_date','Dispatch date *','date',r.date||todayStr())+fld('d_qty','Quantity dispatched *','number',r.qty==null?'':r.qty,NUM)+
     fld('d_inv','Invoice number','text',r.invNo)+fld('d_trans','Transporter / courier','text',r.transporter)+fld('d_lr','LR / AWB number','text',r.lr)+
@@ -603,6 +629,7 @@ const FORMS={
 function prereq(t){
   const d=D[S.co];
   if(t==='products'&&!d.clients.size)return {msg:'Add a client first, then you can add its products.',tab:'clients',btn:'Go to Client / Brand'};
+  if(t==='payments'&&!d.invoices.size)return {msg:'Add an invoice first. Payments are recorded against an invoice.',tab:'invoices',btn:'Go to Daily Invoicing'};
   if((t==='advances'||t==='invoices'||t==='dispatches')&&!d.products.size)return {msg:d.clients.size?'Add at least one product first. Advance, invoices and dispatch are all entered against a product.':'Add a client and its products first. Advance, invoices and dispatch are entered against a product.',tab:d.clients.size?'products':'clients',btn:d.clients.size?'Go to Products':'Go to Client / Brand'};
   return null;
 }
@@ -652,11 +679,18 @@ const PREV={
   invoices:()=>{
     const el=$('#prev'),pid=val('f_product'),po=val('f_po'),q=num('i_qty');
     if(!pid||!po||!q){el.innerHTML='<span class="muted">Pick the product, then enter the PO number and quantity to see the invoice amounts.</span>';return;}
-    const row={id:draftId(),date:val('i_date')||todayStr(),invNo:val('i_no'),productId:pid,po:po,qty:q,extra:num('i_extra'),paid:num('i_paid')};
+    const row={id:draftId(),date:val('i_date')||todayStr(),invNo:val('i_no'),productId:pid,po:po,qty:q,extra:num('i_extra'),paid:0};
     const res=sim('invoices',row),i=res.inv.find(x=>x.id===row.id);
     if(!i)return;
     el.innerHTML=pv('Invoice total incl. GST',inr(i.total))+pv('Advance adjusted',inr(i.adj))+pv('Net receivable',inr(i.net))+
       (i.remain==null?pv('PO qty remaining','No PO qty recorded'):pv('PO qty remaining after this',qty(i.remain)))+pv('Due date',fd(i.due));
+  },
+  payments:()=>{
+    const el=$('#prev'),iid=val('pm_inv'),a=num('pm_amt');
+    if(!iid){el.innerHTML='<span class="muted">Pick the invoice to see how much is still pending.</span>';return;}
+    const res=sim('payments',{id:draftId(),invoiceId:iid,date:val('pm_date')||todayStr(),amount:a}),i=res.inv.find(x=>x.id===iid);
+    if(!i)return;
+    el.innerHTML=pv('Amount due on invoice',inr(i.net))+pv('Received incl. this payment',inr(i.paid))+pv('Still pending',inr(i.pend))+(i.paid>i.net+TOL?pv('Warning','More than the invoice amount'):'')+pv('Due date',fd(i.due));
   },
   dispatches:()=>{
     const el=$('#prev'),pid=val('f_product'),po=val('f_po'),q=num('d_qty');
@@ -671,6 +705,11 @@ const PREV={
 function bindForm(t,row){
   const f=$('#frm');
   f.addEventListener('submit',onSubmit);
+  if(t==='payments'){
+    f.addEventListener('input',PREV.payments);
+    f.addEventListener('change',e=>{if(e.target.id==='pm_inv'&&!val('pm_amt')){const i=R.inv.find(x=>x.id===val('pm_inv'));if(i&&i.pend>0)$('#pm_amt').value=Math.round(i.pend*100)/100;}PREV.payments();});
+    PREV.payments();
+  }
   if(t==='advances'||t==='invoices'||t==='dispatches'){
     chain(row);
     const p=PREV[t];
@@ -705,6 +744,12 @@ function readForm(sec){
     if(dup)return {err:'This client already has a product with that name.'};
     return {row:{id:id,clientId:clientId,name:name,cost:cost,advPct:adv,terms:Math.max(0,parseInt(val('p_terms'),10)||0)}};
   }
+  if(sec==='payments'){
+    if(!val('pm_inv'))return {err:'Select the invoice.'};
+    if(!val('pm_date'))return {err:'Enter the date received.'};
+    if(!(num('pm_amt')>0))return {err:'Enter the amount received.'};
+    return {row:{id:id,invoiceId:val('pm_inv'),date:val('pm_date'),amount:num('pm_amt'),mode:val('pm_mode'),ref:val('pm_ref'),note:val('pm_note')}};
+  }
   const pid=val('f_product'),po=val('f_po');
   if(!pid)return {err:'Select the client and product.'};
   if(!po)return {err:'PO number is required.'};
@@ -721,7 +766,7 @@ function readForm(sec){
     if([...D[S.co].invoices.values()].some(i=>i.id!==id&&norm(i.invNo)===norm(no)))return {err:'An invoice with this number already exists.'};
     if(!val('i_date'))return {err:'Enter the invoice date.'};
     if(!(num('i_qty')>0))return {err:'Enter the invoice quantity.'};
-    return {row:{id:id,date:val('i_date'),invNo:no,productId:pid,po:po,qty:num('i_qty'),extra:num('i_extra'),paid:num('i_paid')}};
+    return {row:{id:id,date:val('i_date'),invNo:no,productId:pid,po:po,qty:num('i_qty'),extra:num('i_extra'),paid:(D[S.co].invoices.get(id)||{}).paid||0}};
   }
   if(!val('d_date'))return {err:'Enter the dispatch date.'};
   if(!(num('d_qty')>0))return {err:'Enter the quantity dispatched.'};
@@ -750,6 +795,7 @@ async function exportCsv(bid){
 async function tryDelete(sec,id){
   const d=D[S.co];
   if(sec==='clients'&&[...d.products.values()].some(p=>p.clientId===id)){toast('Delete this client’s products first.');return;}
+  if(sec==='invoices'&&[...d.payments.values()].some(p=>p.invoiceId===id)){toast('This invoice has payments recorded. Delete those first.');return;}
   if(sec==='products'){
     const n=['advances','invoices','dispatches'].reduce((a,s)=>a+[...d[s].values()].filter(r=>r.productId===id).length,0);
     if(n){toast('This product is used in '+n+(n===1?' entry':' entries')+'. Delete those first.');return;}
@@ -771,6 +817,7 @@ document.addEventListener('click',e=>{
   if(act==='co'){S.co=a.dataset.co;S.form=null;S.q='';saveUI();buildAll();}
   else if(act==='tab'||act==='goto'){S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
   else if(act==='add'){S.form={sec:S.tab,id:null};showForm();}
+  else if(act==='payfor'){S.form={sec:'payments',id:null,inv:a.dataset.id};showForm();const f=$('#frm');if(f&&f.scrollIntoView)f.scrollIntoView({block:'nearest'});}
   else if(act==='cancel'){S.form=null;$('#formHost').innerHTML='';}
   else if(act==='edit'){S.form={sec:a.dataset.sec,id:a.dataset.id};showForm();const f=$('#frm');if(f&&f.scrollIntoView)f.scrollIntoView({block:'nearest'});}
   else if(act==='del'){
