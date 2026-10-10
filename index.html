@@ -137,6 +137,8 @@ textarea{resize:vertical}
 .bh .cnt{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:10px;font-weight:500;background:var(--neutral-bg);border-radius:999px;padding:2px 9px;vertical-align:middle}
 .bt{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .chk{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+#stmtbox select{max-width:300px;min-width:170px}
+#stmtbox .dim{display:block;margin-top:2px}
 .tw{overflow-x:auto;border:1px solid var(--line);border-radius:20px;background:var(--surface);box-shadow:var(--shadow)}
 table{border-collapse:collapse;width:100%;min-width:max-content}
 th{background:var(--head);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:12px 14px;white-space:nowrap;font-weight:700;border-bottom:1px solid var(--line)}
@@ -654,6 +656,7 @@ function buildPanel(){
   const t=S.tab;
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     (S.blocks&&(t==='advances'||t==='invoices'||t==='payments'||t==='dispatches'||t==='admin')?'<input id="q" type="search" placeholder="Search rows" aria-label="Search rows" value="'+esc(S.q)+'">':'')+
+    (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
@@ -905,6 +908,9 @@ document.addEventListener('click',e=>{
     else{S.delArm=key;clearTimeout(delTimer);delTimer=setTimeout(()=>{S.delArm=null;renderList();},4000);renderList();}
   }
   else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
+  else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
+  else if(act==='stmtapply'){applyStatement();}
+  else if(act==='stmtcancel'){STMT=null;$('#formHost').innerHTML='';}
   else if(act==='add'){S.form={sec:S.tab,id:null};showForm();}
   else if(act==='remind'){S.form=null;showReminder(a.dataset.id);}
   else if(act==='openmail'){openMail();}
@@ -1213,6 +1219,138 @@ async function syncPI(manual){
   }catch(e){if(manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
   finally{piBusy=false;}
 }
+
+/* ---------- Bank statement import (Advance tab) ---------- */
+const STMT_SEEN='orderdesk:stmt:seen';
+let STMT=null;
+const alnum=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+function stmtSeen(){try{return new Set(JSON.parse(localStorage.getItem(STMT_SEEN)||'[]'));}catch(e){return new Set();}}
+function parseCSV(t){
+  const rows=[];let r=[],c='',q=false;
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch==='"'){if(t[i+1]==='"'){c+='"';i++;}else q=false;}else c+=ch;}
+    else if(ch==='"')q=true;
+    else if(ch===','||ch==='\t'){r.push(c);c='';}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;r.push(c);rows.push(r);r=[];c='';}
+    else c+=ch;}
+  if(c!==''||r.length){r.push(c);rows.push(r);}
+  return rows;
+}
+function loadXLSX(){
+  return new Promise((res,rej)=>{
+    if(window.XLSX)return res(window.XLSX);
+    const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload=()=>res(window.XLSX);s.onerror=()=>rej(new Error('Could not load the Excel reader (offline?). Save the statement as CSV and attach that instead.'));
+    document.head.appendChild(s);});
+}
+function stmtDate(v){
+  if(v instanceof Date&&!isNaN(v)){const d=new Date(v.getTime()+43200000);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  if(typeof v==='number'&&v>20000&&v<80000){return new Date(Math.round((v-25569)*864e5)).toISOString().slice(0,10);}
+  const s=String(v||'').trim();let m;
+  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  if((m=s.match(/^(\d{1,2})[\/\-.\s]+(\d{1,2})[\/\-.\s]+(\d{2,4})/))){let y=m[3];if(y.length===2)y='20'+y;return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');}
+  if((m=s.match(/^(\d{1,2})[\/\-.\s]+([A-Za-z]{3})[A-Za-z]*[\/\-.\s,]+(\d{2,4})/))){const mi=MON.findIndex(x=>x.toLowerCase()===m[2].toLowerCase());if(mi>=0){let y=m[3];if(y.length===2)y='20'+y;return y+'-'+String(mi+1).padStart(2,'0')+'-'+m[1].padStart(2,'0');}}
+  return '';
+}
+function stmtNum(v){
+  if(typeof v==='number')return v;
+  const s=String(v==null?'':v).replace(/[₹,\s]|INR|Rs\.?/gi,'');
+  const n=parseFloat(s.replace(/(cr|dr)$/i,''));return isNaN(n)?0:n;
+}
+function parseStatement(rows){
+  let hi=-1,col={};
+  for(let i=0;i<Math.min(rows.length,80);i++){
+    const c={};(rows[i]||[]).forEach((x,j)=>{const h=String(x==null?'':x).trim().toLowerCase();if(!h)return;
+      if(c.date==null&&/date/.test(h)&&!/value\s*date/.test(h))c.date=j;
+      else if(c.date==null&&/date/.test(h))c.date=j;
+      if(c.narr==null&&/narrat|descr|particular|remark|detail|transaction/.test(h)&&!/date|type|id/.test(h))c.narr=j;
+      if(c.cr==null&&/credit|deposit|\bcr\b/.test(h)&&!/dr\s*\/\s*cr/.test(h))c.cr=j;
+      if(c.amt==null&&/^amount|txn amount|transaction amount/.test(h))c.amt=j;
+      if(c.type==null&&/dr\s*\/\s*cr|^type|cr\/dr|debit\/credit/.test(h))c.type=j;
+      if(c.ref==null&&/ref|chq|cheque|utr/.test(h))c.ref=j;});
+    if(c.date!=null&&(c.cr!=null||c.amt!=null)){hi=i;col=c;break;}
+  }
+  if(hi<0)throw new Error('Could not find the Date and Credit columns in this file.');
+  const out=[];
+  for(let i=hi+1;i<rows.length;i++){
+    const r=rows[i]||[];const d=stmtDate(r[col.date]);if(!d)continue;
+    let amt=0;
+    if(col.cr!=null)amt=stmtNum(r[col.cr]);
+    else{const a=stmtNum(r[col.amt]);const ty=String(col.type!=null?r[col.type]:r[col.amt]).toUpperCase();if(/CR|CREDIT|^C$/.test(ty)&&!/DR/.test(ty))amt=a;}
+    if(!(amt>0))continue;
+    const narr=String(col.narr!=null?(r[col.narr]==null?'':r[col.narr]):r.filter((x,j)=>j!==col.date&&typeof x==='string').join(' ')).replace(/\s+/g,' ').trim();
+    const ref=col.ref!=null?String(r[col.ref]==null?'':r[col.ref]).trim():'';
+    out.push({date:d,amt:Math.round(amt*100)/100,narr:narr,ref:ref,key:S.co+'|'+d+'|'+amt.toFixed(2)+'|'+alnum(ref||narr).slice(0,40)});
+  }
+  return out;
+}
+/* PO (PI number) options with their pending advance, for the current company */
+function poOptions(){
+  const m=new Map();
+  R.groups.filter(g=>g.hasAdv).forEach(g=>{const k=norm(g.po);let o=m.get(k);if(!o){o={po:g.po,groups:[],pending:0,client:''};m.set(k,o);}
+    o.groups.push(g);o.pending+=Math.max(0,g.pending||0);
+    const p=D[S.co].products.get(g.pid),c=p&&D[S.co].clients.get(p.clientId);if(c&&!o.client)o.client=c.name;});
+  return [...m.values()];
+}
+function matchStatement(items){
+  const opts=poOptions(),seen=stmtSeen();
+  return items.map(it=>{
+    const n=alnum(it.narr+' '+it.ref);let po=null,how='';
+    const hit=opts.filter(o=>alnum(o.po).length>=6&&n.includes(alnum(o.po)));
+    if(hit.length===1){po=hit[0];how='PI number';}
+    else{
+      const cand=opts.filter(o=>{const w=alnum(o.client);return w.length>=4&&n.includes(w.slice(0,Math.min(w.length,10)))&&Math.abs(o.pending-it.amt)<=1;});
+      if(cand.length===1){po=cand[0];how='Client + amount';}
+    }
+    const dup=seen.has(it.key);
+    return Object.assign({},it,{po:po?norm(po.po):'',how:how,dup:dup,on:!!po&&!dup&&how==='PI number'});
+  });
+}
+function renderStmt(){
+  const fh=$('#formHost');if(!STMT){return;}
+  const opts=poOptions();
+  const optHtml=sel=>'<option value="">Not matched</option>'+opts.map(o=>'<option value="'+esc(norm(o.po))+'"'+(sel===norm(o.po)?' selected':'')+'>'+esc(o.po)+(o.client?' · '+esc(o.client):'')+' · pending '+inr(o.pending)+'</option>').join('');
+  const body=STMT.rows.map((r,i)=>'<tr><td><input type="checkbox" data-sr="'+i+'" '+(r.on?'checked':'')+(r.dup?' disabled':'')+' aria-label="Add this payment"></td><td>'+fd(r.date)+'</td><td class="wrapc">'+esc(r.narr||'—')+'</td><td class="n">'+inr(r.amt)+'</td><td>'+(r.dup?'<span class="chip n0">Already added</span>':'<select data-ss="'+i+'">'+optHtml(r.po)+'</select>'+(r.how?'<span class="dim"> '+esc(r.how)+'</span>':''))+'</td></tr>').join('');
+  fh.innerHTML='<div class="form" id="stmtbox"><h3>Bank statement · '+esc(STMT.name)+'</h3><p class="muted">'+STMT.rows.length+' credit(s) found. Payments that carry a PI number are ticked. Others need a PO picked and ticking. Each ticked payment is added as an Advance received entry against that PI.</p>'+
+   (STMT.rows.length?'<div class="tw"><table class="tight"><thead><tr><th></th><th>Date</th><th>Narration</th><th class="n">Credit</th><th>Against PI</th></tr></thead><tbody>'+body+'</tbody></table></div>':'<p>No credit entries found in this file.</p>')+
+   '<div class="fa"><button class="btn primary" data-act="stmtapply">Add selected</button><button class="btn" data-act="stmtcancel">Close</button></div></div>';
+}
+async function loadStatement(file){
+  try{
+    let rows;
+    if(/\.csv$/i.test(file.name)||file.type==='text/csv')rows=parseCSV(await file.text());
+    else{const X=await loadXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array',cellDates:true});rows=X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''});}
+    const items=parseStatement(rows);
+    STMT={name:file.name,rows:matchStatement(items)};
+    S.form=null;renderStmt();const b=$('#stmtbox');if(b&&b.scrollIntoView)b.scrollIntoView({block:'nearest'});
+  }catch(e){toast((e&&e.message)||'Could not read the statement');}
+}
+async function applyStatement(){
+  if(!STMT)return;
+  const rows=STMT.rows,sel=[...document.querySelectorAll('#stmtbox [data-ss]')],chk=[...document.querySelectorAll('#stmtbox [data-sr]')];
+  const seen=stmtSeen();let added=0,skipped=0;
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i];const cb=chk.find(x=>+x.dataset.sr===i),sl=sel.find(x=>+x.dataset.ss===i);
+    if(!cb||!cb.checked||r.dup)continue;
+    const po=sl?sl.value:r.po;if(!po){skipped++;continue;}
+    const o=poOptions().find(x=>norm(x.po)===po);if(!o){skipped++;continue;}
+    /* spread the payment over the PI's product lines: oldest pending first, any excess on the last line */
+    let left=r.amt;const gs=o.groups.slice();
+    for(let j=0;j<gs.length&&left>0.004;j++){
+      const g=gs[j],need=Math.max(0,g.pending||0),last=j===gs.length-1;
+      const part=last?left:Math.min(left,need);if(!(part>0))continue;
+      const ok=await put('advances',{date:r.date,productId:g.pid,po:g.po,poQty:g.poQty,poRate:g.poRate,received:Math.round(part*100)/100,note:'From bank statement: '+(r.narr||'').slice(0,120)+(r.ref?' (ref '+r.ref+')':''),stmtKey:r.key});
+      if(ok)left-=part;
+    }
+    seen.add(r.key);added++;
+  }
+  try{localStorage.setItem(STMT_SEEN,JSON.stringify([...seen]));}catch(e){}
+  STMT.rows=matchStatement(STMT.rows.map(x=>({date:x.date,amt:x.amt,narr:x.narr,ref:x.ref,key:x.key})));
+  renderStmt();
+  toast(added?added+' payment(s) added to Advance'+(skipped?'; '+skipped+' skipped (no PI chosen)':''):(skipped?'Pick a PI for the ticked payments first':'Nothing ticked'));
+}
+document.addEventListener('change',e=>{const t=e.target;if(t&&t.id==='stmtFile'&&t.files&&t.files[0]){loadStatement(t.files[0]);t.value='';}});
+
 initGate();
 loadUI();
 buildAll();
