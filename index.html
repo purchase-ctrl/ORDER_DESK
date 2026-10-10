@@ -226,6 +226,50 @@ table.tight th,table.tight td{padding-left:10px;padding-right:10px}
   .content>*{animation:rise .35s var(--ease) both}
   @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 }
+
+/* ---------- BOM sheet ---------- */
+.bom-ov{position:fixed;inset:0;z-index:90;background:rgba(20,10,28,.6);overflow:auto;padding:16px}
+.bom-ov[hidden]{display:none}
+.bom-bar{max-width:900px;margin:0 auto 12px;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;color:#fff}
+.bom-bar h3{font-family:var(--display);font-size:19px;font-weight:600;margin-right:auto;color:#fff}
+.bom-bar .btn{background:var(--surface);color:var(--ink)}
+.bom-bar .btn.primary{background:linear-gradient(135deg,var(--btn-a),var(--btn-b));color:#fff}
+.bom-sheet{max-width:900px;margin:0 auto;background:#fff;color:#000;border-radius:6px;padding:26px 30px 30px;font-family:Arial,Helvetica,sans-serif;font-size:13px;overflow-x:auto}
+.bom-dates{display:flex;justify-content:space-between;gap:16px;font-size:13px;margin-bottom:4px}
+.bom-dates input{width:150px}
+.bom-t{width:100%;min-width:0;border-collapse:collapse;table-layout:fixed;margin-bottom:26px}
+.bom-t th,.bom-t td{border:1px solid #000;padding:0;vertical-align:middle;background:#fff;white-space:normal;color:#000;text-align:center}
+.bom-t th{font-weight:700;padding:7px 6px;font-size:13px;text-transform:none;letter-spacing:0;border-bottom:1px solid #000}
+.bom-t tbody tr:hover td{background:#fff}
+.bom-t tbody tr:last-child td{border-bottom:1px solid #000}
+.bom-t td.bx,.bom-t tbody tr:last-child td.bx{border:0}
+.bom-t.head th{width:25%;padding:12px 6px}
+.bom-t.items th{font-size:13px}
+.bom-t .bi,.bom-dates input{width:100%;border:0;outline:0;background:transparent;font:inherit;color:#000;padding:8px 8px;resize:none;display:block;min-height:34px;overflow:hidden;border-radius:0;box-shadow:none;text-align:center}
+.bom-t.head .bi{text-align:left}
+.bom-dates input{padding:0 4px;min-height:0;display:inline-block;text-align:left;border-bottom:1px solid #bbb;width:150px}
+.bom-t .bi:focus,.bom-dates input:focus{background:#fff7d6}
+.bom-t .bi[readonly]:focus{background:transparent}
+.bom-t td.bx{width:34px;background:transparent}
+.bom-t.items{margin-bottom:10px}
+.bom-add{margin-bottom:18px}
+.bom-special{margin-bottom:28px;display:flex;gap:6px;align-items:flex-start}
+.bom-special b{white-space:nowrap;padding-top:2px}
+.bom-special .bi{border:0;border-bottom:1px solid #bbb;padding:2px 2px;min-height:0;text-align:left;background:transparent;font:inherit;color:#000;width:100%;resize:none;overflow:hidden;outline:0}
+.bom-t.sign{margin-bottom:0}
+.bom-t.sign th{width:33.33%}
+.bom-t.sign .bi{min-height:40px}
+@media print{
+  body.bom-open>*:not(#bomOverlay){display:none!important}
+  .bom-ov{position:static;background:#fff;padding:0;overflow:visible}
+  .bom-bar,.no-print,col.bx-col{display:none!important}
+  .bom-dates input::-webkit-calendar-picker-indicator{display:none}
+  .bom-dates input.is-empty{color:transparent}
+  .bom-sheet{max-width:none;border-radius:0;padding:0;overflow:visible}
+  .bom-t .bi,.bom-dates input,.bom-special .bi{border-color:transparent;background:transparent!important}
+  .bom-dates input{border-bottom-color:transparent}
+  .bom-t tr{break-inside:avoid}
+}
 </style>
 <title>Order &amp; Payment Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -267,6 +311,7 @@ table.tight th,table.tight td{padding-left:10px;padding-right:10px}
     <main id="panel"></main>
   </div>
 </div>
+<div id="bomOverlay" class="bom-ov" role="dialog" aria-modal="true" aria-label="Bill of materials" hidden></div>
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script>
@@ -331,6 +376,7 @@ async function put(sec,row){
   const prev=D[k][sec].get(id);
   if(prev&&!canModify(prev)){toast('You can only edit entries you added.');return false;}
   if(prev){['createdBy','createdByName','createdAt'].forEach(f=>{if(prev[f]!==undefined)r[f]=prev[f];});}
+  if(prev&&prev.bom&&r.bom===undefined)r.bom=prev.bom; /* editing a product must not wipe its BOM */
   else if(ME){r.createdBy=ME.id;r.createdByName=ME.user;r.createdAt=todayStr();}
   D[k][sec].set(id,r);
   if(store){
@@ -453,7 +499,8 @@ function blocks(){
       cols:[{h:'Client',t:r=>cn(r.clientId)},{h:'Product',t:r=>r.name,r:r=>'<strong>'+esc(r.name)+'</strong>'},
         {h:'Final cost / unit',t:r=>+r.cost||0,cls:'n',fmt:inr},{h:'Advance %',t:r=>advPctOf(r),cls:'n',fmt:pct},
         {h:'Advance / unit',t:r=>advUnit(r),cls:'n',fmt:inr},
-        {h:'Payment terms (days)',t:r=>+r.terms||0,cls:'n',fmt:qty}],
+        {h:'Payment terms (days)',t:r=>+r.terms||0,cls:'n',fmt:qty},
+        {h:'BOM',t:r=>r.bom?'Ready':'Not added',r:r=>(r.bom?chip('ok','Ready')+' ':'')+'<button class="btn sm" data-act="bom" data-id="'+esc(r.id)+'">'+(r.bom?'Open BOM':'Add BOM')+'</button>'}],
       empty:['No products yet','Add each product with its final cost, advance % and payment terms.']}];
   }
   if(t==='advances'){
@@ -897,6 +944,12 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
   const act=a.dataset.act;
   if(act==='co'){S.co=a.dataset.co;S.form=null;S.q='';saveUI();buildAll();}
+  else if(act==='bom'){openBom(a.dataset.id);}
+  else if(act==='bomclose'){bomClose();}
+  else if(act==='bomsave'){bomSave();}
+  else if(act==='bomprint'){bomPrint();}
+  else if(act==='bomadd'){const tb=$('#bomRows');tb.insertAdjacentHTML('beforeend',bomRowHTML({item:'',desc:'',qty:'',art:''},false));BOM.dirty=true;const ta=tb.lastElementChild.querySelector('textarea');if(ta)ta.focus();}
+  else if(act==='bomrm'){const tr=a.closest('tr');if(tr){tr.remove();BOM.dirty=true;}}
   else if(act==='urole'){const u=USERS.get(a.dataset.id);if(isAdmin()&&u&&u.id!==ME.id)putUser(Object.assign({},u,{role:u.role==='admin'?'user':'admin'})).then(ok=>{if(ok){toast(u.user+' is now '+(u.role==='admin'?'a user':'an admin'));refresh();}});}
   else if(act==='upw'){if(isAdmin())showPwReset(a.dataset.id);}
   else if(act==='udel'){
@@ -1107,6 +1160,83 @@ function initGate(){
   });
   showGate();
 }
+
+
+/* ---------- BOM (bill of materials) per product ---------- */
+const BOM_ROWS=['PRIMARY CONTAINER','','','SECONDARY PACKAGING','','','INNER SHIPPER','OUTER SHIPPER','SHRINK','Identification Label on Inner Shipper','Identification Label on Outer Shipper',''];
+const BOM={id:null,ro:false,dirty:false,title:''};
+function bomData(p){
+  const b=p.bom||{},c=D[S.co].clients.get(p.clientId);
+  const pick=(v,d)=>v!=null?v:d;
+  return {created:pick(b.created,todayStr()),recv:b.recv||'',company:pick(b.company,c?c.name:''),brand:pick(b.brand,c?(c.brand||''):''),product:pick(b.product,p.name),
+    sku:b.sku||'',mrp:b.mrp||'',usp:b.usp||'',rows:(b.rows&&b.rows.length)?b.rows:BOM_ROWS.map(n=>({item:n,desc:'',qty:'',art:''})),
+    special:pick(b.special,'Wrap all Outer Shipper Box'),prepared:pick(b.prepared,ME?ME.user:''),checked:b.checked||'',approved:b.approved||''};
+}
+function bomTA(id,v,ro){return '<textarea class="bi" id="'+id+'" rows="1"'+(ro?' readonly':'')+'>'+esc(v)+'</textarea>';}
+function bomRowHTML(r,ro){
+  const f=(k,v)=>'<td><textarea class="bi" data-f="'+k+'" rows="1"'+(ro?' readonly':'')+'>'+esc(v)+'</textarea></td>';
+  return '<tr>'+f('item',r.item)+f('desc',r.desc)+f('qty',r.qty)+f('art',r.art)+(ro?'':'<td class="bx no-print"><button type="button" class="lnk del" data-act="bomrm" aria-label="Remove row" title="Remove row">✕</button></td>')+'</tr>';
+}
+function bomGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
+function bomGrowAll(){document.querySelectorAll('#bomOverlay textarea').forEach(bomGrow);}
+function openBom(id){
+  const p=D[S.co].products.get(id);if(!p)return;
+  const d=bomData(p),ro=!canModify(p);
+  BOM.id=id;BOM.ro=ro;BOM.dirty=false;
+  const hrow=(label,fid,v)=>'<tr><th scope="row">'+label+'</th><td>'+bomTA(fid,v,ro)+'</td></tr>';
+  $('#bomOverlay').innerHTML=
+    '<div class="bom-bar"><h3>Bill of materials · '+esc(p.name)+'</h3>'+
+      (ro?'<span class="muted" style="color:#fff">View only: you can print it but not change it.</span>':'<button class="btn primary" data-act="bomsave">Save BOM</button>')+
+      '<button class="btn" data-act="bomprint">Print / Save PDF</button><button class="btn" data-act="bomclose">Close</button></div>'+
+    '<div class="bom-sheet" id="bomSheet">'+
+      '<div class="bom-dates"><label>DATE OF CREATION - <input type="date" id="b_created" value="'+esc(d.created)+'"'+(ro?' readonly':'')+'></label><label>DATE OF RECEIVING- <input type="date" id="b_recv" value="'+esc(d.recv)+'"'+(ro?' readonly':'')+'></label></div>'+
+      '<table class="bom-t head"><tbody>'+hrow('Company Name','b_company',d.company)+hrow('Brand name','b_brand',d.brand)+hrow('Product Name','b_product',d.product)+hrow('SKU Size','b_sku',d.sku)+hrow('MRP Rs.','b_mrp',d.mrp)+hrow('USP Rs.','b_usp',d.usp)+'</tbody></table>'+
+      '<table class="bom-t items"><colgroup><col style="width:27%"><col style="width:26%"><col style="width:21%"><col style="width:26%">'+(ro?'':'<col class="bx-col" style="width:34px">')+'</colgroup>'+
+        '<thead><tr><th>Item Name</th><th>Description</th><th>Qty/Case</th><th>APPROVED ARTWORK</th>'+(ro?'':'<th class="bx no-print" style="border:0;background:transparent"></th>')+'</tr></thead>'+
+        '<tbody id="bomRows">'+d.rows.map(r=>bomRowHTML(r,ro)).join('')+'</tbody></table>'+
+      (ro?'':'<button type="button" class="btn sm bom-add no-print" data-act="bomadd">+ Add row</button>')+
+      '<div class="bom-special"><b>Special Instruction:</b>'+bomTA('b_special',d.special,ro).replace('class="bi"','class="bi sp"')+'</div>'+
+      '<table class="bom-t sign"><thead><tr><th>Prepared By</th><th>Checked By</th><th>Approved By</th></tr></thead><tbody><tr><td>'+bomTA('b_prepared',d.prepared,ro)+'</td><td>'+bomTA('b_checked',d.checked,ro)+'</td><td>'+bomTA('b_approved',d.approved,ro)+'</td></tr></tbody></table>'+
+    '</div>';
+  BOM.title=document.title;
+  document.body.classList.add('bom-open');
+  const ov=$('#bomOverlay');ov.hidden=false;ov.scrollTop=0;
+  bomGrowAll();
+  document.querySelectorAll('#bomOverlay input[type=date]').forEach(i=>i.classList.toggle('is-empty',!i.value));
+}
+function bomRead(){
+  const g=id=>$('#'+id).value.trim();
+  return {created:g('b_created'),recv:g('b_recv'),company:g('b_company'),brand:g('b_brand'),product:g('b_product'),sku:g('b_sku'),mrp:g('b_mrp'),usp:g('b_usp'),
+    rows:[...document.querySelectorAll('#bomRows tr')].map(tr=>{const v=k=>tr.querySelector('[data-f="'+k+'"]').value.trim();return {item:v('item'),desc:v('desc'),qty:v('qty'),art:v('art')};}),
+    special:g('b_special'),prepared:g('b_prepared'),checked:g('b_checked'),approved:g('b_approved')};
+}
+async function bomSave(){
+  const p=D[S.co].products.get(BOM.id);
+  if(!p||!canModify(p)){toast('You can only edit BOMs for products you may edit.');return;}
+  if(await put('products',Object.assign({},p,{bom:bomRead()}))){BOM.dirty=false;toast('BOM saved');}
+}
+function bomClose(){
+  if(BOM.dirty&&!BOM.ro&&!confirm('Close without saving your changes to this BOM?'))return;
+  $('#bomOverlay').hidden=true;$('#bomOverlay').innerHTML='';document.body.classList.remove('bom-open');BOM.id=null;
+}
+function bomPrint(){
+  const p=D[S.co].products.get(BOM.id);
+  const name=['BOM',($('#b_brand')||{}).value,($('#b_product')||{}).value].filter(Boolean).join(' - ');
+  const old=document.title;document.title=name||old;
+  bomGrowAll();window.print();
+  setTimeout(()=>{document.title=old;},800);
+}
+document.addEventListener('input',e=>{
+  if(!e.target.closest||!e.target.closest('#bomOverlay'))return;
+  BOM.dirty=true;if(e.target.tagName==='TEXTAREA')bomGrow(e.target);
+  if(e.target.type==='date')e.target.classList.toggle('is-empty',!e.target.value);
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&!$('#bomOverlay').hidden)bomClose();
+  /* Enter inside a one-line BOM cell should not add a line break */
+  if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('bi')&&!e.shiftKey)e.preventDefault();
+});
+window.addEventListener('beforeprint',()=>{if(!$('#bomOverlay').hidden)bomGrowAll();});
 
 /* ---------- admin ---------- */
 function stdActs(sec,r){
