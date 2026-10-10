@@ -157,6 +157,26 @@ textarea{resize:vertical}
 #stmtbox select{max-width:300px;min-width:170px}
 #stmtbox .dim{display:block;margin-top:2px}
 body.cloud [data-act="restore"]{display:none}
+.th{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.srt{font-style:normal;color:var(--accent);font-weight:700}
+.fbtn{display:inline-grid;place-items:center;width:22px;height:22px;border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer;opacity:.55;transition:opacity .15s,background .15s}
+th:hover .fbtn,.fbtn:focus-visible,.fbtn.on{opacity:1}
+.fbtn:hover{background:var(--accent-soft);color:var(--accent)}
+.fbtn.on{background:var(--accent);color:#fff}
+.fpop{position:fixed;z-index:60;width:264px;max-width:calc(100vw - 16px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 50px rgba(30,10,40,.28);padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+.fpop .fh{font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 4px}
+.fpop .fs{all:unset;cursor:pointer;padding:7px 8px;border-radius:9px}
+.fpop .fs:hover{background:var(--accent-soft)}
+.fpop #fsearch{width:100%;min-height:36px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg,transparent);color:inherit;font:inherit}
+.fpop .fl{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px}
+.fpop .fi{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:7px;cursor:pointer}
+.fpop .fi:hover{background:var(--accent-soft)}
+.fpop .fi span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fpop .fi em{font-style:normal;font-size:11.5px;color:var(--muted)}
+.fpop .fi.all{border-bottom:1px solid var(--line);border-radius:7px 7px 0 0;font-weight:600}
+.fpop .fnone{padding:10px}
+.fpop .ffa{display:flex;align-items:center;gap:8px}
+.fpop .ffa .lnk{margin-left:auto}
 .tw{overflow-x:auto;border:1px solid var(--line);border-radius:20px;background:var(--surface);box-shadow:var(--shadow)}
 table{border-collapse:collapse;width:100%;min-width:max-content}
 th{background:var(--head);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:12px 14px;white-space:nowrap;font-weight:700;border-bottom:1px solid var(--line)}
@@ -570,19 +590,15 @@ function cellHTML(c,r){
   if(v==null||v==='')return '—';
   return esc(c.fmt?c.fmt(v):v);
 }
-function filtered(b){
-  if(S.q){const q=S.q.toLowerCase();return b.rows.filter(r=>b.cols.some(c=>String(c.t(r)==null?'':c.t(r)).toLowerCase().includes(q)));}
-  return b.rows;
-}
 function blockHTML(b){
   const rows=filtered(b);
   const cnt=rows.length+(rows.length!==b.rows.length?' of '+b.rows.length:'');
-  let h='<section class="block"><div class="bh"><h3>'+esc(b.title)+'<span class="cnt">'+cnt+'</span></h3><div class="bt">'+(b.extra||'')+
+  let h='<section class="block"><div class="bh"><h3>'+esc(b.title)+'<span class="cnt">'+cnt+'</span></h3><div class="bt">'+(b.extra||'')+(filterCount(b)||S.sorts[b.id]?'<button class="btn sm" data-act="fclear" data-b="'+esc(b.id)+'">Clear filters</button>':'')+
     (dl&&b.rows.length?'<button class="btn sm" data-act="csv" data-b="'+b.id+'">Export CSV</button>':'')+'</div></div>';
   if(!b.rows.length){return h+'<div class="empty"><h3>'+esc(b.empty[0])+'</h3><p class="muted">'+esc(b.empty[1])+'</p></div></section>';}
   if(!rows.length){return h+'<div class="empty"><h3>No rows match</h3><p class="muted">Clear the search to see every row.</p></div></section>';}
   const vc=b.cols.filter(c=>!c.x);
-  h+='<div class="tw"><table'+(b.tight?' class="tight"':'')+'><thead><tr>'+vc.map(c=>'<th class="'+(c.cls==='n'?'r':'')+'">'+esc(c.h)+'</th>').join('')+((b.edit||b.acts)?'<th></th>':'')+'</tr></thead><tbody>';
+  h+='<div class="tw"><table'+(b.tight?' class="tight"':'')+'><thead><tr>'+b.cols.map((c,ci)=>{if(c.x)return '';const on=S.filters[b.id]&&S.filters[b.id][ci],so=S.sorts[b.id]&&S.sorts[b.id].ci===ci?S.sorts[b.id].dir:'';return '<th class="'+(c.cls==='n'?'r':'')+'"><span class="th">'+esc(c.h)+(so?'<i class="srt">'+(so==='asc'?'↑':'↓')+'</i>':'')+'<button type="button" class="fbtn'+(on?' on':'')+'" data-b="'+esc(b.id)+'" data-c="'+ci+'" aria-label="Filter '+esc(c.h)+'" title="Filter and sort"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M2 3h12l-4.6 5.4V13l-2.8-1.6V8.4z" fill="currentColor"/></svg></button></span></th>';}).join('')+((b.edit||b.acts)?'<th></th>':'')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     h+='<tr>'+vc.map(c=>'<td class="'+(c.cls||'')+'">'+cellHTML(c,r)+'</td>').join('');
     if(b.edit||b.acts)h+='<td class="act">'+(b.acts?b.acts(r):stdActs(b.edit,r))+'</td>';
@@ -935,14 +951,14 @@ async function clearSamples(){
 document.addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
   const act=a.dataset.act;
-  if(act==='co'){S.co=a.dataset.co;S.form=null;S.q='';saveUI();buildAll();}
+  if(act==='co'){S.co=a.dataset.co;S.form=null;S.q='';S.filters={};S.sorts={};closeFilter();saveUI();buildAll();}
   else if(act==='upw'){if(isAdmin())showPwReset(a.dataset.id);}
   else if(act==='udel'){
     const id=a.dataset.id,key='u:'+id;
     if(S.delArm===key){S.delArm=null;clearTimeout(delTimer);if(isAdmin()&&ME&&id!==ME.id)removeUser(id).then(ok=>{if(ok){toast('User deleted');refresh();}});}
     else{S.delArm=key;clearTimeout(delTimer);delTimer=setTimeout(()=>{S.delArm=null;renderList();},4000);renderList();}
   }
-  else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
+  else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';S.filters={};S.sorts={};closeFilter();saveUI();renderTabs();buildPanel();}
   else if(act==='cloudimport'){cloudImport();}
   else if(act==='pname'){if(isAdmin())showPiName(a.dataset.id);}
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
@@ -1527,6 +1543,104 @@ async function cloudImport(){
     await cloudLoad();buildAll();toast('Uploaded '+rows.length+' entries to the cloud');
   }catch(e){if(!cloudGone(e))toast('Upload failed: '+e.message);}
 }
+
+/* ---------- Excel-style column filters and sorting ---------- */
+S.filters={};S.sorts={};
+const BLANK='(Blanks)';
+function colText(c,r){const v=c.t(r);if(v==null||v==='')return BLANK;return String(c.fmt?c.fmt(v):v);}
+function rowMatchesQ(b,r){const q=S.q.toLowerCase();return b.cols.some(c=>String(c.t(r)==null?'':c.t(r)).toLowerCase().includes(q)||colText(c,r).toLowerCase().includes(q));}
+function passCols(b,r,skip){const f=S.filters[b.id];if(!f)return true;for(const k in f){const ci=+k;if(ci===skip)continue;if(!f[k].has(colText(b.cols[ci],r)))return false;}return true;}
+function filtered(b){
+  let rows=b.rows;
+  if(S.q)rows=rows.filter(r=>rowMatchesQ(b,r));
+  if(S.filters[b.id])rows=rows.filter(r=>passCols(b,r,-1));
+  const so=S.sorts[b.id];
+  if(so&&b.cols[so.ci]){
+    const c=b.cols[so.ci],d=so.dir==='desc'?-1:1;
+    rows=rows.slice().sort((x,y)=>{
+      const a=c.t(x),z=c.t(y),ab=a==null||a==='',zb=z==null||z==='';
+      if(ab||zb)return ab&&zb?0:(ab?1:-1);
+      if(typeof a==='number'&&typeof z==='number')return (a-z)*d;
+      return String(a).localeCompare(String(z),undefined,{numeric:true,sensitivity:'base'})*d;});
+  }
+  return rows;
+}
+const filterCount=b=>Object.keys(S.filters[b.id]||{}).length;
+let FP=null;
+function closeFilter(){const p=$('#fpop');if(p)p.remove();FP=null;}
+function openFilter(bid,ci,btn){
+  closeFilter();
+  const b=S.blocks.find(x=>x.id===bid);if(!b)return;
+  const c=b.cols[ci];
+  /* values come from the rows that pass the other columns' filters, like Excel */
+  let rows=b.rows;if(S.q)rows=rows.filter(r=>rowMatchesQ(b,r));
+  rows=rows.filter(r=>passCols(b,r,ci));
+  const m=new Map();
+  rows.forEach(r=>{const k=colText(c,r),raw=c.t(r);let e=m.get(k);if(!e){e={k:k,raw:raw,n:0};m.set(k,e);}e.n++;});
+  const vals=[...m.values()].sort((x,y)=>{
+    if(x.k===BLANK)return 1;if(y.k===BLANK)return -1;
+    if(typeof x.raw==='number'&&typeof y.raw==='number')return x.raw-y.raw;
+    return String(x.raw).localeCompare(String(y.raw),undefined,{numeric:true,sensitivity:'base'});});
+  const cur=(S.filters[bid]||{})[ci];
+  FP={b:bid,ci:ci,vals:vals,sel:new Set(cur?[...cur].filter(k=>m.has(k)):vals.map(v=>v.k)),q:''};
+  const p=document.createElement('div');p.id='fpop';p.className='fpop';p.setAttribute('role','dialog');p.setAttribute('aria-label','Filter '+c.h);
+  const num=c.cls==='n';
+  p.innerHTML='<div class="fh">'+esc(c.h)+'</div><button type="button" class="fs" data-fs="asc">'+(num?'Smallest to largest':'Sort A to Z')+'</button><button type="button" class="fs" data-fs="desc">'+(num?'Largest to smallest':'Sort Z to A')+'</button><input type="search" id="fsearch" placeholder="Search values" aria-label="Search values" autocomplete="off"><div class="fl" id="fl"></div><div class="ffa"><button type="button" class="btn primary sm" id="fok">OK</button><button type="button" class="btn sm" id="fcancel">Cancel</button><button type="button" class="lnk" id="fclr">Clear filter</button></div>';
+  document.body.appendChild(p);
+  const r=btn.getBoundingClientRect();
+  p.style.left=Math.max(8,Math.min(r.left,window.innerWidth-p.offsetWidth-8))+'px';
+  p.style.top=Math.min(r.bottom+6,Math.max(8,window.innerHeight-p.offsetHeight-8))+'px';
+  drawFilterList();
+  $('#fsearch').focus();
+}
+function drawFilterList(){
+  if(!FP)return;
+  const q=FP.q.toLowerCase(),vis=FP.vals.filter(v=>!q||v.k.toLowerCase().includes(q));
+  FP.vis=vis;
+  const allOn=vis.length>0&&vis.every(v=>FP.sel.has(v.k));
+  $('#fl').innerHTML=(vis.length?'<label class="fi all"><input type="checkbox" id="fall"'+(allOn?' checked':'')+'><span>'+(q?'Select all results':'Select all')+'</span></label>':'<div class="muted fnone">No values match</div>')+
+    vis.map((v,i)=>'<label class="fi"><input type="checkbox" data-fv="'+i+'"'+(FP.sel.has(v.k)?' checked':'')+'><span>'+esc(v.k)+'</span><em>'+v.n+'</em></label>').join('');
+}
+function applyFilter(){
+  if(!FP)return;
+  const bid=FP.b,ci=FP.ci;
+  const f=S.filters[bid]||(S.filters[bid]={});
+  if(FP.vals.every(v=>FP.sel.has(v.k)))delete f[ci];else f[ci]=new Set(FP.sel);
+  if(!Object.keys(f).length)delete S.filters[bid];
+  closeFilter();renderList();
+}
+document.addEventListener('click',e=>{
+  const t=e.target;
+  const fb=t.closest&&t.closest('.fbtn');
+  if(fb){e.stopPropagation();if(FP&&FP.b===fb.dataset.b&&FP.ci===+fb.dataset.c){closeFilter();}else openFilter(fb.dataset.b,+fb.dataset.c,fb);return;}
+  const pop=$('#fpop');
+  if(pop&&!pop.contains(t))closeFilter();
+  const cf=t.closest&&t.closest('[data-act="fclear"]');
+  if(cf){delete S.filters[cf.dataset.b];delete S.sorts[cf.dataset.b];renderList();}
+},true);
+document.addEventListener('click',e=>{
+  if(!FP)return;
+  const t=e.target;
+  if(t.id==='fok')applyFilter();
+  else if(t.id==='fcancel')closeFilter();
+  else if(t.id==='fclr'){const f=S.filters[FP.b];if(f){delete f[FP.ci];if(!Object.keys(f).length)delete S.filters[FP.b];}closeFilter();renderList();}
+  else if(t.dataset&&t.dataset.fs){S.sorts[FP.b]={ci:FP.ci,dir:t.dataset.fs};closeFilter();renderList();}
+});
+document.addEventListener('change',e=>{
+  if(!FP)return;const t=e.target;
+  if(t.id==='fall'){FP.vis.forEach(v=>{if(t.checked)FP.sel.add(v.k);else FP.sel.delete(v.k);});drawFilterList();}
+  else if(t.dataset&&t.dataset.fv!=null){const v=FP.vis[+t.dataset.fv];if(v){if(t.checked)FP.sel.add(v.k);else FP.sel.delete(v.k);}const all=$('#fall');if(all)all.checked=FP.vis.every(x=>FP.sel.has(x.k));}
+});
+document.addEventListener('input',e=>{
+  if(FP&&e.target.id==='fsearch'){
+    /* like Excel: typing selects exactly the matching values, so OK filters to them */
+    FP.q=e.target.value;const q=FP.q.toLowerCase();
+    FP.sel=new Set(FP.vals.filter(v=>!q||v.k.toLowerCase().includes(q)).map(v=>v.k));
+    drawFilterList();
+  }
+});
+document.addEventListener('keydown',e=>{if(!FP)return;if(e.key==='Escape')closeFilter();else if(e.key==='Enter'&&e.target.id==='fsearch'){e.preventDefault();applyFilter();}});
+window.addEventListener('resize',closeFilter);
 
 initGate();
 loadUI();
