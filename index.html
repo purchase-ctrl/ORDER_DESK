@@ -366,7 +366,7 @@ function calc(d){
   const G=(po,pid)=>{const k=gkey(po,pid);let g=groups.get(k);if(!g){g={k:k,po:String(po||'').trim(),pid:pid,poQty:0,poRate:0,received:0,invQty:0,adjusted:0,dispQty:0,logQty:0,hasAdv:false};groups.set(k,g);}return g;};
 
   const adv=[...d.advances].sort(srt);
-  adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;});
+  adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;if(!g.by)g.by=whoName(a);});
 
   const payBy=new Map();d.payments.forEach(x=>payBy.set(x.invoiceId,(payBy.get(x.invoiceId)||0)+(+x.amount||0)));
   const inv=[...d.invoices].sort(srt).map(i=>{
@@ -461,7 +461,7 @@ function blocks(){
     return [
       {id:'adv-summary',name:'advance position by PO',title:'Advance position by PO',rows:R.groups.filter(g=>g.hasAdv).sort((a,b)=>cl(a).localeCompare(cl(b))||pr(a).localeCompare(pr(b))||a.po.localeCompare(b.po)),
         cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
-          {h:'Order value',t:r=>r.orderValue,cls:'n',fmt:inr},{h:'Advance required',t:r=>r.required,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.received,cls:'n',fmt:inr,s:1},
+          {h:'Order value',t:r=>r.orderValue,cls:'n',fmt:inr},{h:'Created by',t:r=>r.by||'',r:r=>r.by?'<span class="chip br">'+esc(r.by)+'</span>':'<span class="dim">—</span>'},{h:'Advance required',t:r=>r.required,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.received,cls:'n',fmt:inr,s:1},
           {h:'Pending',t:r=>r.pending,cls:'n',fmt:inr,s:1},{h:'Received %',t:r=>r.recvPct,cls:'n',fmt:pct},
           {h:'Adjusted in invoices',t:r=>r.adjusted,cls:'n',fmt:inr,s:1},{h:'Not yet adjusted',t:r=>r.unadj,cls:'n',fmt:inr,s:1},
           {h:'Status',t:r=>r.required<=0?'No advance set':(r.pending<=TOL?(r.excess>TOL?'Excess':'Complete'):'Pending'),r:chipAdv}],
