@@ -508,7 +508,7 @@ function blocks(){
     const us=[...USERS.values()].sort((a,b)=>(roleOf(a)===roleOf(b)?0:(roleOf(a)==='admin'?-1:1))||String(a.user).localeCompare(String(b.user)));
     return [{id:'admin-users',name:'users',title:'Users',rows:us,acts:userActs,
       cols:[{h:'Username',t:r=>r.user+(ME&&r.id===ME.id?' (you)':'')},{h:'Role',t:r=>roleOf(r)==='admin'?'Admin':'User',r:r=>chip(roleOf(r)==='admin'?'ok':'n0',roleOf(r)==='admin'?'Admin':'User')},
-        {h:'Created',t:r=>r.created,fmt:fd},{h:'Entries added',t:r=>countBy(r.id),cls:'n',fmt:qty}],
+        {h:'PI Desk name',t:r=>r.piName||'',r:r=>r.piName?esc(r.piName):'<span class="dim">Not linked</span>'},{h:'Created',t:r=>r.created,fmt:fd},{h:'Entries added',t:r=>countBy(r.id),cls:'n',fmt:qty}],
       empty:['No users yet','Accounts appear here as people sign up.']},
      {id:'admin-entries',name:'all entries',title:'All entries in this company',search:1,rows:adminEntries(),
       acts:r=>stdActs(r.sec,r.rec),
@@ -944,6 +944,7 @@ document.addEventListener('click',e=>{
   }
   else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
   else if(act==='cloudimport'){cloudImport();}
+  else if(act==='pname'){if(isAdmin())showPiName(a.dataset.id);}
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
   else if(act==='stmtapply'){applyStatement();}
   else if(act==='stmtcancel'){STMT=null;$('#formHost').innerHTML='';}
@@ -1170,7 +1171,7 @@ function stdActs(sec,r){
 function countBy(uid){let n=0;COS.forEach(c=>SECS.forEach(s=>D[c.key][s].forEach(r=>{if(r.createdBy===uid)n++;})));return n;}
 function userActs(u){
   if(ME&&u.id===ME.id)return '<span class="muted">You</span>';
-  if(CLOUD)return '<span class="muted">Manage in Supabase</span>';
+  if(CLOUD)return '<button class="lnk" data-act="pname" data-id="'+esc(u.id)+'">Set PI name</button><span class="muted"> · password in Supabase</span>';
   const arm=S.delArm==='u:'+u.id;
   return '<button class="lnk" data-act="upw" data-id="'+esc(u.id)+'">Reset password</button><button class="lnk del" data-act="udel" data-id="'+esc(u.id)+'">'+(arm?'Confirm delete':'Delete')+'</button>';
 }
@@ -1203,7 +1204,19 @@ function piSeen(){try{return new Set(JSON.parse(localStorage.getItem(PI_SEEN_KEY
 function piSave(set){try{localStorage.setItem(PI_SEEN_KEY,JSON.stringify([...set]));}catch(e){}}
 const piSlug=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,'').slice(0,40);
 async function syncPI(manual){
-  if(CLOUD&&!ME)return;
+  if(CLOUD){
+    /* In cloud mode the database does the sync and stamps each row with the PI creator, so users only see their own PIs. */
+    if(!ME||piBusy)return;piBusy=true;
+    try{
+      const r=await sbRest('POST','rpc/od_sync_pis',{});
+      await cloudLoad();refresh();
+      const n=r?(+r.clients||0)+(+r.products||0)+(+r.advances||0):0;
+      if(n)toast('PI sync: '+(r.clients||0)+' new client(s), '+(r.products||0)+' new product(s), '+(r.advances||0)+' advance entr'+((r.advances||0)===1?'y':'ies'));
+      else if(manual)toast('PI sync: nothing new');
+    }catch(e){if(!cloudGone(e)&&manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
+    finally{piBusy=false;}
+    return;
+  }
   if(piBusy)return;piBusy=true;
   try{
     const piGet=cols=>fetch(PI_URL+'/rest/v1/pis?select='+cols+'&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
@@ -1441,10 +1454,10 @@ const rowToRec=w=>{const r=Object.assign({},w.data,{id:w.id});r.createdBy=w.by_p
 async function cloudLoad(){
   const rows=[];
   for(let off=0;;off+=1000){const part=await sbRest('GET','od_records?select=company,section,id,data,created_by,created_by_name,by_pi,created_at&order=created_at.asc,id.asc&limit=1000&offset='+off);rows.push.apply(rows,part);if(part.length<1000)break;}
-  const pr=await sbRest('GET','od_profiles?select=id,username,email,created_at');
+  const pr=await sbRest('GET','od_profiles?select=id,username,email,pi_name,created_at');
   COS.forEach(c=>SECS.forEach(s=>D[c.key][s].clear()));PISEEN=new Set();
   rows.forEach(w=>{if(w.section==='pi_seen'){PISEEN.add(w.id);return;}const m=D[w.company]&&D[w.company][w.section];if(m)m.set(w.id,rowToRec(w));});
-  USERS=new Map(pr.map(p=>[p.id,{id:p.id,user:p.username,email:p.email,created:String(p.created_at||'').slice(0,10)}]));
+  USERS=new Map(pr.map(p=>[p.id,{id:p.id,user:p.username,email:p.email,piName:p.pi_name||'',created:String(p.created_at||'').slice(0,10)}]));
 }
 async function startCloud(){
   await sbToken();if(!sess)throw new Error('Signed out');
@@ -1484,11 +1497,28 @@ async function cloudSubmit(user,pw,create){
     saveSess(null);if(!create)$('#g_pass').select();
   }finally{go.disabled=false;}
 }
+function showPiName(id){
+  const u=USERS.get(id);if(!u)return;
+  const names=new Set();COS.forEach(c=>SECS.forEach(sc=>D[c.key][sc].forEach(r=>{if(r.createdBy==='pi'&&r.createdByName&&r.createdByName!=='PI Generator')names.add(r.createdByName);})));
+  $('#formHost').innerHTML='<form id="pnf" class="form" data-uid="'+esc(id)+'" novalidate><h3>PI Desk name for '+esc(u.user)+'</h3><p class="muted">Type the creator name exactly as it appears in PI Desk. This user will see the PIs and entries made under that name, plus entries they add themselves. Leave it empty to remove the link.</p><div class="grid"><div class="f"><label for="pn_v">PI Desk name</label><input id="pn_v" type="text" list="pn_l" value="'+esc(u.piName||'')+'" autocomplete="off"><datalist id="pn_l">'+[...names].sort().map(n=>'<option value="'+esc(n)+'"></option>').join('')+'</datalist></div></div><div class="fa"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-act="cancel">Cancel</button><span id="ferr" class="ferr" role="alert"></span></div></form>';
+  const f=$('#pn_v');if(f)f.focus();
+}
+document.addEventListener('submit',async e=>{
+  if(e.target.id!=='pnf')return;
+  e.preventDefault();
+  const id=e.target.dataset.uid,v=$('#pn_v').value.trim();
+  try{
+    const res=await sbRest('PATCH','od_profiles?id=eq.'+encodeURIComponent(id),{pi_name:v||null},'return=representation');
+    if(!res||!res.length)throw new Error('Not allowed');
+    const u=USERS.get(id);if(u)u.piName=v;
+    S.form=null;$('#formHost').innerHTML='';renderList();toast(v?'Linked to PI Desk name '+v:'PI Desk link removed');
+  }catch(err){if(!cloudGone(err))$('#ferr').textContent=(err&&err.message)||'Could not save';}
+});
 async function cloudImport(){
   if(!isAdmin())return;
   const rows=[];
   COS.forEach(c=>SECS.forEach(s=>{let a=[];try{a=JSON.parse(localStorage.getItem(lsKey(c.key,s))||'[]');}catch(e){}
-    a.forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi'});});}));
+    a.forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'?(alnum(r.createdByName)||null):null});});}));
   piSeen().forEach(k=>rows.push({company:'_',section:'pi_seen',id:k,data:{},created_by_name:'pi',by_pi:true}));
   if(!rows.length){toast('No data saved in this browser to upload.');return;}
   if(!confirm('Upload '+rows.length+' entries saved in this browser to the shared cloud?\n\nEntries that already exist in the cloud are left as they are.'))return;
