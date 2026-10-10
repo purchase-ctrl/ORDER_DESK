@@ -1151,7 +1151,7 @@ async function syncPI(manual){
   if(piBusy)return;piBusy=true;
   try{
     const piGet=cols=>fetch(PI_URL+'/rest/v1/pis?select='+cols+'&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
-    const BASE='id,company,pi_number,buyer_name,buyer_contact,buyer_phone,buyer_email,buyer_gst,buyer_address,pi_date,items';
+    const BASE='id,created_by,company,pi_number,buyer_name,buyer_contact,buyer_phone,buyer_email,buyer_gst,buyer_address,pi_date,items';
     let res=await piGet(BASE+',brand_name');
     /* If the PI database has no brand_name column yet, carry on without brands instead of failing the whole sync. */
     if(res.status===400)res=await piGet(BASE);
@@ -1161,7 +1161,7 @@ async function syncPI(manual){
     rows.forEach(pi=>{
       const k=piCo(pi.company),name=String(pi.buyer_name||'').trim();
       if(!name)return;
-      const stamp={createdBy:'pi',createdByName:'PI Generator',createdAt:String(pi.pi_date||todayStr()).slice(0,10)};
+      const stamp={createdBy:'pi',createdByName:String(pi.created_by||'').trim()||'PI Generator',createdAt:String(pi.pi_date||todayStr()).slice(0,10)};
       let cl=[...D[k].clients.values()].find(c=>norm(c.name)===norm(name)||(pi.buyer_gst&&c.gstin&&norm(c.gstin)===norm(pi.buyer_gst)));
       const ckey='c|'+k+'|'+piSlug(name);
       if(!cl&&!seen.has(ckey)){
@@ -1169,6 +1169,10 @@ async function syncPI(manual){
         D[k].clients.set(cl.id,cl);seen.add(ckey);nc++;touched.add(k+'|clients');
       }
       if(!cl)return;
+      /* Entries made by an earlier sync carry the generic 'PI Generator' label; replace it with the real PI creator. */
+      const fixN=r=>{if(r&&r.createdBy==='pi'&&r.createdByName==='PI Generator'&&stamp.createdByName!=='PI Generator'){r.createdByName=stamp.createdByName;return true;}return false;};
+      if(fixN(cl))touched.add(k+'|clients');
+      D[k].advances.forEach(a=>{if(norm(a.po)===norm(pi.pi_number)&&fixN(a))touched.add(k+'|advances');});
       /* Fill in a missing brand from the PI, but never overwrite a brand someone already typed here. */
       const pb=String(pi.brand_name||'').trim();
       if(pb&&!String(cl.brand||'').trim()){cl.brand=pb;nb++;touched.add(k+'|clients');}
@@ -1183,6 +1187,7 @@ async function syncPI(manual){
         }
         /* Advance: one entry per PI line, with the PI number in the PO number field, the PI quantity and the PI rate.
            Nothing is marked as received; it shows as pending until the real payment is entered. */
+        if(fixN(p))touched.add(k+'|products');
         const pino=String(pi.pi_number||'').trim(),qty=+it.qty;
         if(!ME||!p||!pino||!(qty>0))return;
         const akey='a|'+k+'|'+piSlug(pino)+'|'+ix;
@@ -1202,7 +1207,8 @@ async function syncPI(manual){
     }
     touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});
     piSave(seen);
-    if(nc||np||nb||na){buildAll();toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
+    if(touched.size)buildAll();
+    if(nc||np||nb||na){toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
     else if(manual)toast('PI sync: nothing new ('+rows.length+' PIs checked)');
   }catch(e){if(manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
   finally{piBusy=false;}
