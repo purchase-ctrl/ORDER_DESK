@@ -156,6 +156,13 @@ tfoot td{background:var(--head);font-weight:700;border-top:1px solid var(--line)
 .chip.warn{background:var(--warn-bg);color:var(--warn)}
 .chip.bad{background:var(--bad-bg);color:var(--bad)}
 .chip.n0{background:var(--neutral-bg);color:var(--muted)}
+table.tight th,table.tight td{padding-left:10px;padding-right:10px}
+.chip.br{background:var(--accent-soft);color:var(--accent)}
+.who{display:flex;align-items:center;gap:11px}
+.who strong{display:block;line-height:1.25}
+.who .sub{font-family:inherit;margin-top:1px}
+.av{flex:none;display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.02em}
+.dim{color:var(--muted);font-size:12.5px}
 .sub{display:block;font-size:12px;color:var(--muted);font-family:var(--mono)}
 .bar{display:inline-block;width:88px;height:8px;border-radius:4px;background:var(--neutral-bg);overflow:hidden;vertical-align:middle;margin-right:8px}
 .bar>i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3))}
@@ -429,10 +436,15 @@ function blocks(){
   const cn=id=>{const c=d.clients.get(id);return c?c.name:'—';};
   if(t==='clients'){
     const cnt=id=>[...d.products.values()].filter(p=>p.clientId===id).length;
-    return [{id:'clients',name:'clients',title:'Clients',edit:'clients',rows:[...d.clients.values()].sort(byName),
-      cols:[{h:'Client',t:r=>r.name,r:r=>'<strong>'+esc(r.name)+'</strong>'},{h:'Brand',t:r=>r.brand},{h:'GSTIN',t:r=>r.gstin,cls:'mono'},
-        {h:'Contact person',t:r=>r.contact},{h:'Phone',t:r=>r.phone},{h:'City',t:r=>r.city},{h:'Products',t:r=>cnt(r.id),cls:'n',fmt:qty},
-        {h:'Notes',t:r=>r.notes,cls:'wrap'}],
+    const ini=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w.charAt(0)).join('').toUpperCase()||'?';
+    /* x:1 columns stay in search and CSV export but are not drawn in the table, so it fits without sideways scrolling */
+    return [{id:'clients',name:'clients',title:'Clients',edit:'clients',tight:1,rows:[...d.clients.values()].sort(byName),
+      cols:[{h:'Client',t:r=>r.name,r:r=>'<span class="who"><span class="av" aria-hidden="true">'+esc(ini(r.name))+'</span><span><strong>'+esc(r.name)+'</strong>'+(r.city?'<span class="sub">'+esc(r.city)+'</span>':'')+'</span></span>'},
+        {h:'Brand',t:r=>r.brand,r:r=>r.brand?chip('br',r.brand):'<span class="dim">No brand</span>'},
+        {h:'GSTIN',t:r=>r.gstin,cls:'mono'},
+        {h:'Contact',t:r=>r.contact,r:r=>(r.contact||r.phone)?(r.contact?'<strong>'+esc(r.contact)+'</strong>':'')+(r.phone?'<span class="sub">'+esc(r.phone)+'</span>':''):'<span class="dim">—</span>'},
+        {h:'Products',t:r=>cnt(r.id),r:r=>{const n=cnt(r.id);return n?chip('ok',n+(n===1?' product':' products')):chip('n0','No products');}},
+        {h:'City',t:r=>r.city,x:1},{h:'Phone',t:r=>r.phone,x:1},{h:'Email',t:r=>r.email,x:1},{h:'Address',t:r=>r.address,x:1},{h:'Notes',t:r=>r.notes,x:1}],
       empty:['No clients yet','Add the companies and brands you supply. Everything else is entered against a client.']}];
   }
   if(t==='products'){
@@ -541,15 +553,16 @@ function blockHTML(b){
     (dl&&b.rows.length?'<button class="btn sm" data-act="csv" data-b="'+b.id+'">Export CSV</button>':'')+'</div></div>';
   if(!b.rows.length){return h+'<div class="empty"><h3>'+esc(b.empty[0])+'</h3><p class="muted">'+esc(b.empty[1])+'</p></div></section>';}
   if(!rows.length){return h+'<div class="empty"><h3>No rows match</h3><p class="muted">Clear the search to see every row.</p></div></section>';}
-  h+='<div class="tw"><table><thead><tr>'+b.cols.map(c=>'<th class="'+(c.cls==='n'?'r':'')+'">'+esc(c.h)+'</th>').join('')+((b.edit||b.acts)?'<th></th>':'')+'</tr></thead><tbody>';
+  const vc=b.cols.filter(c=>!c.x);
+  h+='<div class="tw"><table'+(b.tight?' class="tight"':'')+'><thead><tr>'+vc.map(c=>'<th class="'+(c.cls==='n'?'r':'')+'">'+esc(c.h)+'</th>').join('')+((b.edit||b.acts)?'<th></th>':'')+'</tr></thead><tbody>';
   rows.forEach(r=>{
-    h+='<tr>'+b.cols.map(c=>'<td class="'+(c.cls||'')+'">'+cellHTML(c,r)+'</td>').join('');
+    h+='<tr>'+vc.map(c=>'<td class="'+(c.cls||'')+'">'+cellHTML(c,r)+'</td>').join('');
     if(b.edit||b.acts)h+='<td class="act">'+(b.acts?b.acts(r):stdActs(b.edit,r))+'</td>';
     h+='</tr>';
   });
   h+='</tbody>';
-  if(b.cols.some(c=>c.s)){
-    h+='<tfoot><tr>'+b.cols.map((c,i)=>{if(i===0)return '<td>Total</td>';if(!c.s)return '<td></td>';const s=rows.reduce((a,r)=>a+(+c.t(r)||0),0);return '<td class="n">'+esc(c.fmt(s))+'</td>';}).join('')+((b.edit||b.acts)?'<td></td>':'')+'</tr></tfoot>';
+  if(vc.some(c=>c.s)){
+    h+='<tfoot><tr>'+vc.map((c,i)=>{if(i===0)return '<td>Total</td>';if(!c.s)return '<td></td>';const s=rows.reduce((a,r)=>a+(+c.t(r)||0),0);return '<td class="n">'+esc(c.fmt(s))+'</td>';}).join('')+((b.edit||b.acts)?'<td></td>':'')+'</tr></tfoot>';
   }
   return h+'</table></div></section>';
 }
@@ -1137,10 +1150,14 @@ const piSlug=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,'').slice(0,40
 async function syncPI(manual){
   if(piBusy)return;piBusy=true;
   try{
-    const res=await fetch(PI_URL+'/rest/v1/pis?select=id,company,pi_number,buyer_name,buyer_contact,buyer_phone,buyer_email,buyer_gst,buyer_address,pi_date,items&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
+    const piGet=cols=>fetch(PI_URL+'/rest/v1/pis?select='+cols+'&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
+    const BASE='id,company,pi_number,buyer_name,buyer_contact,buyer_phone,buyer_email,buyer_gst,buyer_address,pi_date,items';
+    let res=await piGet(BASE+',brand_name');
+    /* If the PI database has no brand_name column yet, carry on without brands instead of failing the whole sync. */
+    if(res.status===400)res=await piGet(BASE);
     if(!res.ok)throw new Error('HTTP '+res.status);
     const rows=await res.json();
-    const seen=piSeen();let nc=0,np=0,touched=new Set();
+    const seen=piSeen();let nc=0,np=0,nb=0,touched=new Set();
     rows.forEach(pi=>{
       const k=piCo(pi.company),name=String(pi.buyer_name||'').trim();
       if(!name)return;
@@ -1148,10 +1165,13 @@ async function syncPI(manual){
       let cl=[...D[k].clients.values()].find(c=>norm(c.name)===norm(name)||(pi.buyer_gst&&c.gstin&&norm(c.gstin)===norm(pi.buyer_gst)));
       const ckey='c|'+k+'|'+piSlug(name);
       if(!cl&&!seen.has(ckey)){
-        cl=Object.assign({id:'pi_c_'+k+'_'+piSlug(name),name:name,brand:'',gstin:String(pi.buyer_gst||'').toUpperCase(),contact:pi.buyer_contact||'',phone:pi.buyer_phone||'',email:pi.buyer_email||'',city:'',address:pi.buyer_address||'',notes:'Auto-created from PI '+(pi.pi_number||'')},stamp);
+        cl=Object.assign({id:'pi_c_'+k+'_'+piSlug(name),name:name,brand:String(pi.brand_name||'').trim(),gstin:String(pi.buyer_gst||'').toUpperCase(),contact:pi.buyer_contact||'',phone:pi.buyer_phone||'',email:pi.buyer_email||'',city:'',address:pi.buyer_address||'',notes:'Auto-created from PI '+(pi.pi_number||'')},stamp);
         D[k].clients.set(cl.id,cl);seen.add(ckey);nc++;touched.add(k+'|clients');
       }
       if(!cl)return;
+      /* Fill in a missing brand from the PI, but never overwrite a brand someone already typed here. */
+      const pb=String(pi.brand_name||'').trim();
+      if(pb&&!String(cl.brand||'').trim()){cl.brand=pb;nb++;touched.add(k+'|clients');}
       (Array.isArray(pi.items)?pi.items:[]).forEach(it=>{
         const pn=String(it.product||'').replace(/\s+/g,' ').trim(),rate=+it.price;
         if(!pn||!(rate>=0))return;
@@ -1164,7 +1184,7 @@ async function syncPI(manual){
     });
     touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});
     piSave(seen);
-    if(nc||np){buildAll();toast('PI sync: '+nc+' new client(s), '+np+' new product(s)');}
+    if(nc||np||nb){buildAll();toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':''));}
     else if(manual)toast('PI sync: nothing new ('+rows.length+' PIs checked)');
   }catch(e){if(manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
   finally{piBusy=false;}
