@@ -252,7 +252,7 @@ tfoot td{background:var(--head);font-weight:700;border-top:1px solid var(--line)
     <nav id="cos" class="cos" aria-label="Company"></nav>
     <div class="slabel">Workspace</div>
     <div id="tabs" class="tabs" role="tablist" aria-label="Sections"></div>
-    <div class="sfoot"><div class="bk"><span id="sync" class="sync"></span><span id="who" class="sync"></span><button class="btn sm" data-act="logout">Log out</button><button class="btn sm" data-act="backup">Backup</button><button class="btn sm" data-act="restore">Restore</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div></div>
+    <div class="sfoot"><div class="bk"><span id="sync" class="sync"></span><span id="who" class="sync"></span><button class="btn sm" data-act="logout">Log out</button><button class="btn sm" data-act="pisync" title="Pull new entries from PI Generator">Sync PI</button><button class="btn sm" data-act="backup">Backup</button><button class="btn sm" data-act="restore">Restore</button><input type="file" id="restoreFile" accept="application/json,.json" hidden></div></div>
   </aside>
   <div class="content">
     <div id="banner"></div>
@@ -943,6 +943,7 @@ function restoreAll(file){
 }
 document.addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
+  if(a.dataset.act==='pisync'){syncPI(true);return;}
   if(a.dataset.act==='backup')backupAll();
   else if(a.dataset.act==='restore')$('#restoreFile').click();
 });
@@ -973,7 +974,7 @@ let USERS=new Map(),ME=null,usersReady=false,gateMode='login';
 const slug=u=>String(u||'').trim().toLowerCase();
 const validUser=u=>/^[a-z0-9_.-]{3,30}$/i.test(u);
 const isAdmin=()=>!!ME&&ME.role==='admin';
-const canModify=r=>!!ME&&(ME.role==='admin'||(!!r&&!!r.createdBy&&r.createdBy===ME.id));
+const canModify=r=>!!ME&&(ME.role==='admin'||(!!r&&!!r.createdBy&&(r.createdBy===ME.id||r.createdBy==='pi')));
 const whoName=r=>r&&r.createdBy?((USERS.get(r.createdBy)||{}).user||r.createdByName||'a user'):'admin';
 const hasSession=()=>{try{return sessionStorage.getItem(SESS_KEY)||'';}catch(e){return '';}};
 const setSession=v=>{try{if(v)sessionStorage.setItem(SESS_KEY,v);else sessionStorage.removeItem(SESS_KEY);}catch(e){}};
@@ -1123,11 +1124,57 @@ function showPwReset(uid){
   $('#rp_pw').focus();
 }
 
+
+/* ---------- PI Generator sync (Supabase, read-only) ---------- */
+const PI_URL='https://xsdcvwjithtsvhcntovp.supabase.co';
+const PI_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzZGN2d2ppdGh0c3ZoY250b3ZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4MTg5MTYsImV4cCI6MjEwMTM5NDkxNn0.2GtTm9QaqMcpIx3Z5BS7VTiCP9MD8TmzuNDs2dGzlZA';
+const PI_EVERY=60000, PI_SEEN_KEY='orderdesk:pi:seen';
+let piBusy=false;
+function piCo(c){c=String(c||'').toLowerCase();if(/cosm/.test(c))return 'scp';if(/dyana|intern|^di$/.test(c))return 'di';return 'si';}
+function piSeen(){try{return new Set(JSON.parse(localStorage.getItem(PI_SEEN_KEY)||'[]'));}catch(e){return new Set();}}
+function piSave(set){try{localStorage.setItem(PI_SEEN_KEY,JSON.stringify([...set]));}catch(e){}}
+const piSlug=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,'').slice(0,40);
+async function syncPI(manual){
+  if(piBusy)return;piBusy=true;
+  try{
+    const res=await fetch(PI_URL+'/rest/v1/pis?select=id,company,pi_number,buyer_name,buyer_contact,buyer_phone,buyer_email,buyer_gst,buyer_address,pi_date,items&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const rows=await res.json();
+    const seen=piSeen();let nc=0,np=0,touched=new Set();
+    rows.forEach(pi=>{
+      const k=piCo(pi.company),name=String(pi.buyer_name||'').trim();
+      if(!name)return;
+      const stamp={createdBy:'pi',createdByName:'PI Generator',createdAt:String(pi.pi_date||todayStr()).slice(0,10)};
+      let cl=[...D[k].clients.values()].find(c=>norm(c.name)===norm(name)||(pi.buyer_gst&&c.gstin&&norm(c.gstin)===norm(pi.buyer_gst)));
+      const ckey='c|'+k+'|'+piSlug(name);
+      if(!cl&&!seen.has(ckey)){
+        cl=Object.assign({id:'pi_c_'+k+'_'+piSlug(name),name:name,brand:'',gstin:String(pi.buyer_gst||'').toUpperCase(),contact:pi.buyer_contact||'',phone:pi.buyer_phone||'',email:pi.buyer_email||'',city:'',address:pi.buyer_address||'',notes:'Auto-created from PI '+(pi.pi_number||'')},stamp);
+        D[k].clients.set(cl.id,cl);seen.add(ckey);nc++;touched.add(k+'|clients');
+      }
+      if(!cl)return;
+      (Array.isArray(pi.items)?pi.items:[]).forEach(it=>{
+        const pn=String(it.product||'').replace(/\s+/g,' ').trim(),rate=+it.price;
+        if(!pn||!(rate>=0))return;
+        const pkey='p|'+k+'|'+cl.id+'|'+piSlug(pn);
+        const have=[...D[k].products.values()].some(p=>p.clientId===cl.id&&norm(p.name)===norm(pn));
+        if(have||seen.has(pkey))return;
+        const p=Object.assign({id:'pi_p_'+k+'_'+piSlug(cl.name)+'_'+piSlug(pn),clientId:cl.id,name:pn,cost:rate,advPct:+it.advancePct||0,terms:30},stamp);
+        D[k].products.set(p.id,p);seen.add(pkey);np++;touched.add(k+'|products');
+      });
+    });
+    touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});
+    piSave(seen);
+    if(nc||np){buildAll();toast('PI sync: '+nc+' new client(s), '+np+' new product(s)');}
+    else if(manual)toast('PI sync: nothing new ('+rows.length+' PIs checked)');
+  }catch(e){if(manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
+  finally{piBusy=false;}
+}
 initGate();
 loadUI();
 buildAll();
 loadLocal();loadLocalUsers();usersReady=true;gateReady();
 buildAll();
+syncPI(false);setInterval(()=>syncPI(false),PI_EVERY);
 })();
 </script>
 
