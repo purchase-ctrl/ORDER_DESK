@@ -1518,7 +1518,7 @@ async function cloudImport(){
   if(!isAdmin())return;
   const rows=[];
   COS.forEach(c=>SECS.forEach(s=>{let a=[];try{a=JSON.parse(localStorage.getItem(lsKey(c.key,s))||'[]');}catch(e){}
-    a.forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'?(alnum(r.createdByName)||null):null});});}));
+    a.forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'&&r.createdByName!=='PI Generator'?(alnum(r.createdByName)||null):null});});}));
   piSeen().forEach(k=>rows.push({company:'_',section:'pi_seen',id:k,data:{},created_by_name:'pi',by_pi:true}));
   if(!rows.length){toast('No data saved in this browser to upload.');return;}
   if(!confirm('Upload '+rows.length+' entries saved in this browser to the shared cloud?\n\nEntries that already exist in the cloud are left as they are.'))return;
