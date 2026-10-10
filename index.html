@@ -147,7 +147,7 @@ tbody tr{transition:background-color .12s}
 tbody tr:hover td{background:var(--head)}
 td.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
 td.mono{font-family:var(--mono)}
-td.wrap{white-space:normal;min-width:200px}
+td.wrapc{white-space:normal;min-width:200px}
 td.act{text-align:right}
 tfoot td{background:var(--head);font-weight:700;border-top:1px solid var(--line);border-bottom:0}
 .chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
@@ -471,7 +471,7 @@ function blocks(){
           {h:'Advance required',t:r=>r.req,cls:'n',fmt:inr},{h:'Received',t:r=>+r.received||0,cls:'n',fmt:inr,s:1},{h:'% of required',t:r=>r.pctThis,cls:'n',fmt:pct},
           {h:'Pending as of this date',t:r=>r.pendPct==null?'':(r.pendAfter<=TOL?'Fully paid':pct(r.pendPct)+' pending'),
             r:r=>r.pendPct==null?'—':(r.pendAfter<=TOL?chip('ok','Fully paid'):chip('warn',pct(r.pendPct)+' pending')+'<span class="sub">'+inr(r.pendAfter)+'</span>')},
-          {h:'Note',t:r=>r.note,cls:'wrap'}],
+          {h:'Note',t:r=>r.note,cls:'wrapc'}],
         empty:['No advance entries yet','Log each part payment against its PO as it arrives. The pending share is worked out as of each date.']}
     ];
   }
@@ -484,7 +484,7 @@ function blocks(){
       empty:['No users yet','Accounts appear here as people sign up.']},
      {id:'admin-entries',name:'all entries',title:'All entries in this company',search:1,rows:adminEntries(),
       acts:r=>stdActs(r.sec,r.rec),
-      cols:[{h:'Type',t:r=>r.label},{h:'Entry',t:r=>r.text,cls:'wrap'},{h:'Date',t:r=>r.date,fmt:fd},{h:'Added by',t:r=>whoName(r.rec)}],
+      cols:[{h:'Type',t:r=>r.label},{h:'Entry',t:r=>r.text,cls:'wrapc'},{h:'Date',t:r=>r.date,fmt:fd},{h:'Added by',t:r=>whoName(r.rec)}],
       empty:['No entries yet','Entries added in any tab show up here for the admin to edit or delete.']}];
   }
   if(t==='payments'){
@@ -500,7 +500,7 @@ function blocks(){
      {id:'pay-log',name:'payment log',title:'Payments received',edit:'payments',search:1,rows:R.pay,
       cols:[{h:'Date received',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.i?r.i.invNo:'(removed invoice)',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.i?r.i.po:'',cls:'mono'},
         {h:'Amount received',t:r=>r.amt,cls:'n',fmt:inr,s:1},{h:'Mode',t:r=>r.mode},{h:'Reference',t:r=>r.ref,cls:'mono'},
-        {h:'Pending on invoice after this',t:r=>r.pendAfter,cls:'n',fmt:inr},{h:'Note',t:r=>r.note,cls:'wrap'}],
+        {h:'Pending on invoice after this',t:r=>r.pendAfter,cls:'n',fmt:inr},{h:'Note',t:r=>r.note,cls:'wrapc'}],
       empty:['No payments recorded','Use Record payment on an invoice above. Each payment reduces that invoice’s pending amount.']}];
   }
   if(t==='invoices'){
@@ -1141,7 +1141,7 @@ function showPwReset(uid){
 /* ---------- PI Generator sync (Supabase, read-only) ---------- */
 const PI_URL='https://xsdcvwjithtsvhcntovp.supabase.co';
 const PI_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzZGN2d2ppdGh0c3ZoY250b3ZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4MTg5MTYsImV4cCI6MjEwMTM5NDkxNn0.2GtTm9QaqMcpIx3Z5BS7VTiCP9MD8TmzuNDs2dGzlZA';
-const PI_EVERY=60000, PI_SEEN_KEY='orderdesk:pi:seen';
+const PI_EVERY=60000, PI_SEEN_KEY='orderdesk:pi:seen', PI_ADV_KEY='orderdesk:pi:advmode';
 let piBusy=false;
 function piCo(c){c=String(c||'').toLowerCase();if(/cosm/.test(c))return 'scp';if(/dyana|intern|^di$/.test(c))return 'di';return 'si';}
 function piSeen(){try{return new Set(JSON.parse(localStorage.getItem(PI_SEEN_KEY)||'[]'));}catch(e){return new Set();}}
@@ -1157,7 +1157,7 @@ async function syncPI(manual){
     if(res.status===400)res=await piGet(BASE);
     if(!res.ok)throw new Error('HTTP '+res.status);
     const rows=await res.json();
-    const seen=piSeen();let nc=0,np=0,nb=0,touched=new Set();
+    const seen=piSeen();let nc=0,np=0,nb=0,na=0,touched=new Set();const adds=[];
     rows.forEach(pi=>{
       const k=piCo(pi.company),name=String(pi.buyer_name||'').trim();
       if(!name)return;
@@ -1172,19 +1172,37 @@ async function syncPI(manual){
       /* Fill in a missing brand from the PI, but never overwrite a brand someone already typed here. */
       const pb=String(pi.brand_name||'').trim();
       if(pb&&!String(cl.brand||'').trim()){cl.brand=pb;nb++;touched.add(k+'|clients');}
-      (Array.isArray(pi.items)?pi.items:[]).forEach(it=>{
+      (Array.isArray(pi.items)?pi.items:[]).forEach((it,ix)=>{
         const pn=String(it.product||'').replace(/\s+/g,' ').trim(),rate=+it.price;
         if(!pn||!(rate>=0))return;
         const pkey='p|'+k+'|'+cl.id+'|'+piSlug(pn);
-        const have=[...D[k].products.values()].some(p=>p.clientId===cl.id&&norm(p.name)===norm(pn));
-        if(have||seen.has(pkey))return;
-        const p=Object.assign({id:'pi_p_'+k+'_'+piSlug(cl.name)+'_'+piSlug(pn),clientId:cl.id,name:pn,cost:rate,advPct:+it.advancePct||0,terms:30},stamp);
-        D[k].products.set(p.id,p);seen.add(pkey);np++;touched.add(k+'|products');
+        let p=[...D[k].products.values()].find(x=>x.clientId===cl.id&&norm(x.name)===norm(pn));
+        if(!p&&!seen.has(pkey)){
+          p=Object.assign({id:'pi_p_'+k+'_'+piSlug(cl.name)+'_'+piSlug(pn),clientId:cl.id,name:pn,cost:rate,advPct:+it.advancePct||0,terms:30},stamp);
+          D[k].products.set(p.id,p);seen.add(pkey);np++;touched.add(k+'|products');
+        }
+        /* Advance: one entry per PI line, with the PI number in the PO number field, the PI quantity and the PI rate.
+           Nothing is marked as received; it shows as pending until the real payment is entered. */
+        const pino=String(pi.pi_number||'').trim(),qty=+it.qty;
+        if(!ME||!p||!pino||!(qty>0))return;
+        const akey='a|'+k+'|'+piSlug(pino)+'|'+ix;
+        if(seen.has(akey))return;
+        const have=[...D[k].advances.values()].some(a=>norm(a.po)===norm(pino)&&a.productId===p.id)||adds.some(a=>a.k===k&&norm(a.row.po)===norm(pino)&&a.row.productId===p.id);
+        if(have){seen.add(akey);return;}
+        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,received:0,note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
       });
     });
+    if(adds.length){
+      /* First time with many PIs waiting: ask once whether to bring the existing ones in. */
+      let go=true,mode='';
+      try{mode=localStorage.getItem(PI_ADV_KEY)||'';}catch(e){}
+      if(!mode&&adds.length>3)go=confirm(adds.length+' PI lines from PI Desk are not in Advance yet.\n\nAdd them now? They are added as pending advance (PO number = PI number, with quantity and rate). Nothing is marked as received.\n\nOK = add them all. Cancel = skip the existing ones and only add new PIs from now on.');
+      try{localStorage.setItem(PI_ADV_KEY,go?'all':'new');}catch(e){}
+      adds.forEach(a=>{seen.add(a.akey);if(go){D[a.k].advances.set(a.row.id,a.row);na++;touched.add(a.k+'|advances');}});
+    }
     touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});
     piSave(seen);
-    if(nc||np||nb){buildAll();toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':''));}
+    if(nc||np||nb||na){buildAll();toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
     else if(manual)toast('PI sync: nothing new ('+rows.length+' PIs checked)');
   }catch(e){if(manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
   finally{piBusy=false;}
