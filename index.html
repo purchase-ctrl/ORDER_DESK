@@ -571,7 +571,7 @@ function cellHTML(c,r){
   return esc(c.fmt?c.fmt(v):v);
 }
 function filtered(b){
-  if(b.search&&S.q){const q=S.q.toLowerCase();return b.rows.filter(r=>b.cols.some(c=>String(c.t(r)==null?'':c.t(r)).toLowerCase().includes(q)));}
+  if(S.q){const q=S.q.toLowerCase();return b.rows.filter(r=>b.cols.some(c=>String(c.t(r)==null?'':c.t(r)).toLowerCase().includes(q)));}
   return b.rows;
 }
 function blockHTML(b){
@@ -690,7 +690,7 @@ function buildAll(){recompute();renderCos();renderKpis();renderTabs();renderBann
 function buildPanel(){
   const t=S.tab;
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
-    (S.blocks&&(t==='advances'||t==='invoices'||t==='payments'||t==='dispatches'||t==='admin')?'<input id="q" type="search" placeholder="Search rows" aria-label="Search rows" value="'+esc(S.q)+'">':'')+
+    '<input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div><div id="listHost"></div>';
