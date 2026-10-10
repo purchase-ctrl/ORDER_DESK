@@ -156,6 +156,7 @@ textarea{resize:vertical}
 .chk{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
 #stmtbox select{max-width:300px;min-width:170px}
 #stmtbox .dim{display:block;margin-top:2px}
+body.cloud [data-act="restore"]{display:none}
 .tw{overflow-x:auto;border:1px solid var(--line);border-radius:20px;background:var(--surface);box-shadow:var(--shadow)}
 table{border-collapse:collapse;width:100%;min-width:max-content}
 th{background:var(--head);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:12px 14px;white-space:nowrap;font-weight:700;border-bottom:1px solid var(--line)}
@@ -352,7 +353,12 @@ async function put(sec,row){
   if(prev){['createdBy','createdByName','createdAt'].forEach(f=>{if(prev[f]!==undefined)r[f]=prev[f];});}
   else if(ME){r.createdBy=ME.id;r.createdByName=ME.user;r.createdAt=todayStr();}
   D[k][sec].set(id,r);
-  if(store){
+  if(CLOUD&&!store){
+    try{
+      if(prev){const res=await sbRest('PATCH','od_records?company=eq.'+k+'&section=eq.'+sec+'&id=eq.'+encodeURIComponent(id),{data:r},'return=representation');if(!res||!res.length)throw new Error('You are not allowed to change this entry.');}
+      else await sbRest('POST','od_records',{company:k,section:sec,id:id,data:r,created_by_name:ME.user,by_pi:false});
+    }catch(e){if(prev)D[k][sec].set(id,prev);else D[k][sec].delete(id);refresh();if(!cloudGone(e))toast('Could not save: '+((e&&e.message)||'unknown error'));return false;}
+  }else if(store){
     try{await store.collection(k+'_'+sec).doc(id).set(r);}
     catch(e){if(prev)D[k][sec].set(id,prev);else D[k][sec].delete(id);refresh();toast('Could not save: '+((e&&(e.message||e.code))||'unknown error'));return false;}
   }else{saveLocal(k,sec);}
@@ -362,7 +368,10 @@ async function del(sec,id){
   const k=S.co,prev=D[k][sec].get(id);
   if(prev&&!canModify(prev)){toast('You can only delete entries you added.');return false;}
   D[k][sec].delete(id);
-  if(store){
+  if(CLOUD&&!store){
+    try{const res=await sbRest('DELETE','od_records?company=eq.'+k+'&section=eq.'+sec+'&id=eq.'+encodeURIComponent(id),null,'return=representation');if(!res||!res.length)throw new Error('You are not allowed to delete this entry.');}
+    catch(e){if(prev)D[k][sec].set(id,prev);refresh();if(!cloudGone(e))toast('Could not delete: '+((e&&e.message)||'unknown error'));return false;}
+  }else if(store){
     try{await store.collection(k+'_'+sec).doc(id).delete();}
     catch(e){if(prev)D[k][sec].set(id,prev);refresh();toast('Could not delete: '+((e&&(e.message||e.code))||'unknown error'));return false;}
   }else{saveLocal(k,sec);}
@@ -496,9 +505,9 @@ function blocks(){
   }
   if(t==='admin'){
     if(!isAdmin())return [];
-    const us=[...USERS.values()].sort((a,b)=>(a.role===b.role?0:(a.role==='admin'?-1:1))||String(a.user).localeCompare(String(b.user)));
+    const us=[...USERS.values()].sort((a,b)=>(roleOf(a)===roleOf(b)?0:(roleOf(a)==='admin'?-1:1))||String(a.user).localeCompare(String(b.user)));
     return [{id:'admin-users',name:'users',title:'Users',rows:us,acts:userActs,
-      cols:[{h:'Username',t:r=>r.user+(ME&&r.id===ME.id?' (you)':'')},{h:'Role',t:r=>r.role==='admin'?'Admin':'User',r:r=>chip(r.role==='admin'?'ok':'n0',r.role==='admin'?'Admin':'User')},
+      cols:[{h:'Username',t:r=>r.user+(ME&&r.id===ME.id?' (you)':'')},{h:'Role',t:r=>roleOf(r)==='admin'?'Admin':'User',r:r=>chip(roleOf(r)==='admin'?'ok':'n0',roleOf(r)==='admin'?'Admin':'User')},
         {h:'Created',t:r=>r.created,fmt:fd},{h:'Entries added',t:r=>countBy(r.id),cls:'n',fmt:qty}],
       empty:['No users yet','Accounts appear here as people sign up.']},
      {id:'admin-entries',name:'all entries',title:'All entries in this company',search:1,rows:adminEntries(),
@@ -673,7 +682,7 @@ function openMail(){
   a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
 }
 function renderSync(){
-  $('#sync').textContent='Saved in this browser only. Use Backup to move it.';
+  $('#sync').textContent=CLOUD?'Shared cloud data. Updates every 20 seconds.':'Saved in this browser only. Use Backup to move it.';
 }
 function refresh(){recompute();renderKpis();renderTabs();renderBanner();renderList();}
 function buildAll(){recompute();renderCos();renderKpis();renderTabs();renderBanner();buildPanel();renderSync();}
@@ -683,6 +692,7 @@ function buildPanel(){
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     (S.blocks&&(t==='advances'||t==='invoices'||t==='payments'||t==='dispatches'||t==='admin')?'<input id="q" type="search" placeholder="Search rows" aria-label="Search rows" value="'+esc(S.q)+'">':'')+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
+    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
@@ -926,7 +936,6 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
   const act=a.dataset.act;
   if(act==='co'){S.co=a.dataset.co;S.form=null;S.q='';saveUI();buildAll();}
-  else if(act==='urole'){const u=USERS.get(a.dataset.id);if(isAdmin()&&u&&u.id!==ME.id)putUser(Object.assign({},u,{role:u.role==='admin'?'user':'admin'})).then(ok=>{if(ok){toast(u.user+' is now '+(u.role==='admin'?'a user':'an admin'));refresh();}});}
   else if(act==='upw'){if(isAdmin())showPwReset(a.dataset.id);}
   else if(act==='udel'){
     const id=a.dataset.id,key='u:'+id;
@@ -934,6 +943,7 @@ document.addEventListener('click',e=>{
     else{S.delArm=key;clearTimeout(delTimer);delTimer=setTimeout(()=>{S.delArm=null;renderList();},4000);renderList();}
   }
   else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';saveUI();renderTabs();buildPanel();}
+  else if(act==='cloudimport'){cloudImport();}
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
   else if(act==='stmtapply'){applyStatement();}
   else if(act==='stmtcancel'){STMT=null;$('#formHost').innerHTML='';}
@@ -1018,15 +1028,18 @@ async function hashPw(pw,salt){
 let USERS=new Map(),ME=null,usersReady=false,gateMode='login';
 const slug=u=>String(u||'').trim().toLowerCase();
 const validUser=u=>/^[a-z0-9_.-]{3,30}$/i.test(u);
-const isAdmin=()=>!!ME&&ME.role==='admin';
-const canModify=r=>!!ME&&(ME.role==='admin'||(!!r&&!!r.createdBy&&(r.createdBy===ME.id||r.createdBy==='pi')));
+/* Only this one account is an admin. Every other login is a normal user and the role cannot be changed from the app. */
+const ADMIN_ID='nihar_sunshineind.in';
+const roleOf=u=>u&&slug(u.email?String(u.email).split('@')[0]:u.user)===ADMIN_ID?'admin':'user';
+const isAdmin=()=>!!ME&&roleOf(ME)==='admin';
+const canModify=r=>!!ME&&(roleOf(ME)==='admin'||(!!r&&!!r.createdBy&&(r.createdBy===ME.id||r.createdBy==='pi')));
 const whoName=r=>r&&r.createdBy?((USERS.get(r.createdBy)||{}).user||r.createdByName||'a user'):'admin';
 const hasSession=()=>{try{return sessionStorage.getItem(SESS_KEY)||'';}catch(e){return '';}};
 const setSession=v=>{try{if(v)sessionStorage.setItem(SESS_KEY,v);else sessionStorage.removeItem(SESS_KEY);}catch(e){}};
 function saveLocalUsers(){try{localStorage.setItem(USERS_KEY,JSON.stringify([...USERS.values()]));}catch(e){}}
 function loadLocalUsers(){
   try{JSON.parse(localStorage.getItem(USERS_KEY)||'[]').forEach(u=>USERS.set(u.id,u));}catch(e){}
-  if(!USERS.size){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');if(a&&a.user&&a.salt&&a.hash){USERS.set(slug(a.user),{id:slug(a.user),user:a.user,salt:a.salt,hash:a.hash,role:'admin',created:todayStr()});saveLocalUsers();}}catch(e){}}
+  if(!USERS.size){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');if(a&&a.user&&a.salt&&a.hash){USERS.set(slug(a.user),{id:slug(a.user),user:a.user,salt:a.salt,hash:a.hash,role:roleOf({user:a.user}),created:todayStr()});saveLocalUsers();}}catch(e){}}
 }
 async function putUser(u){
   const prev=USERS.get(u.id);USERS.set(u.id,u);
@@ -1053,7 +1066,7 @@ function subscribeUsers(){
     if(R)refresh();
   },err=>{usersReady=true;toast('Live users stopped: '+((err&&err.code)||'unknown'));gateReady();});
 }
-function renderWho(){const w=$('#who');if(w)w.textContent=ME?ME.user+' · '+(ME.role==='admin'?'Admin':'User'):'';}
+function renderWho(){const w=$('#who');if(w)w.textContent=ME?ME.user+' · '+(roleOf(ME)==='admin'?'Admin':'User'):'';}
 function lockApp(locked){
   const w=document.querySelector('.wrap'),g=$('#gate'),t=$('#toast');
   w.hidden=locked;g.hidden=!locked;if(locked)t.hidden=true;
@@ -1072,7 +1085,7 @@ function showGate(){
   const go=$('#g_go'),form=$('#gform');
   if(!usersReady){$('#gt').textContent='Loading…';$('#gsub').textContent='';form.hidden=true;$('#gfoot').textContent='';return;}
   form.hidden=false;
-  const first=USERS.size===0,create=first||gateMode==='signup';
+  const first=!CLOUD&&USERS.size===0,create=first||gateMode==='signup';
   $('#gt').textContent=first?'Create the admin login':(create?'Create your account':'Welcome back');
   $('#gsub').textContent=first?'This first account becomes the admin. The admin can edit or delete any entry and manage other users.':(create?'You can edit or delete only the entries you add. The admin can manage everything.':'Log in to open the desk.');
   $('#g_c_wrap').hidden=!create;
@@ -1092,16 +1105,24 @@ async function submitGate(e){
   err.textContent='';
   if(!usersReady)return;
   if(!(window.crypto&&crypto.subtle)){err.textContent='This browser cannot create a secure login. Open the page in an up-to-date browser.';return;}
-  const first=USERS.size===0,create=first||gateMode==='signup';
+  const first=!CLOUD&&USERS.size===0,create=first||gateMode==='signup';
+  if(CLOUD){
+    if(!validUser(user))return void(err.textContent='Username needs 3 to 30 letters, numbers, dots, dashes or underscores.');
+    if(create){
+      if(pw.length<6)return void(err.textContent='Password needs at least 6 characters.');
+      if(pw!==$('#g_conf').value)return void(err.textContent='The two passwords do not match.');
+    }
+    return void(await cloudSubmit(user,pw,create));
+  }
   if(create){
     if(!validUser(user))return void(err.textContent='Username needs 3 to 30 letters, numbers, dots, dashes or underscores.');
     if(pw.length<6)return void(err.textContent='Password needs at least 6 characters.');
     if(pw!==$('#g_conf').value)return void(err.textContent='The two passwords do not match.');
     if(USERS.has(slug(user)))return void(err.textContent='That username is taken. Choose another.');
     const salt=crypto.getRandomValues(new Uint8Array(16));
-    const u={id:slug(user),user:user,salt:b64(salt),hash:await hashPw(pw,salt),role:first?'admin':'user',created:todayStr()};
+    const u={id:slug(user),user:user,salt:b64(salt),hash:await hashPw(pw,salt),role:roleOf({user:user}),created:todayStr()};
     if(!(await putUser(u)))return;
-    ME=u;setSession(u.id);gateMode='login';afterLogin();toast(first?'Admin login created':'Account created');
+    ME=u;setSession(u.id);gateMode='login';afterLogin();toast('Account created');
   }else{
     const u=USERS.get(slug(user));
     if(!u||await hashPw(pw,unb64(u.salt))!==u.hash){err.textContent='Username or password is not correct.';$('#g_pass').select();return;}
@@ -1120,6 +1141,7 @@ function initGate(){
   document.addEventListener('click',e=>{
     const t=e.target;
     if(t.dataset&&t.dataset.gate){gateMode=t.dataset.gate;showGate();}
+    if(t.id==='g_forgot'&&CLOUD){$('#gfoot').innerHTML='Ask the admin to reset your password in Supabase (Authentication, then Users).';return;}
     if(t.id==='g_forgot'){
       $('#gfoot').innerHTML=store?'Ask the admin to reset your password from the Admin page. If the admin forgot theirs, ask Claude to reset it.':'Ask the admin to reset your password from the Admin page. If the admin forgot theirs, type RESET to remove all logins on this device and start again. Your companies, invoices and payments stay as they are.<span class="gout"><input id="g_reset" type="text" autocomplete="off" aria-label="Type RESET"><button type="button" class="btn sm" id="g_reset_go">Remove all logins</button></span>';
       const r=$('#g_reset');if(r)r.focus();
@@ -1128,7 +1150,7 @@ function initGate(){
       if($('#g_reset').value.trim().toUpperCase()!=='RESET'){$('#g_err').textContent='Type RESET to confirm.';return;}
       USERS=new Map();saveLocalUsers();try{localStorage.removeItem(AUTH_KEY);}catch(x){}setSession('');ME=null;gateMode='login';showGate();
     }
-    if(t.closest&&t.closest('[data-act="logout"]')){ME=null;setSession('');S.form=null;gateMode='login';showGate();}
+    if(t.closest&&t.closest('[data-act="logout"]')){if(CLOUD){cloudLogout();return;}ME=null;setSession('');S.form=null;gateMode='login';showGate();}
   });
   document.addEventListener('submit',async e=>{
     if(e.target.id!=='pwf')return;
@@ -1148,8 +1170,9 @@ function stdActs(sec,r){
 function countBy(uid){let n=0;COS.forEach(c=>SECS.forEach(s=>D[c.key][s].forEach(r=>{if(r.createdBy===uid)n++;})));return n;}
 function userActs(u){
   if(ME&&u.id===ME.id)return '<span class="muted">You</span>';
+  if(CLOUD)return '<span class="muted">Manage in Supabase</span>';
   const arm=S.delArm==='u:'+u.id;
-  return '<button class="lnk" data-act="urole" data-id="'+esc(u.id)+'">'+(u.role==='admin'?'Make user':'Make admin')+'</button><button class="lnk" data-act="upw" data-id="'+esc(u.id)+'">Reset password</button><button class="lnk del" data-act="udel" data-id="'+esc(u.id)+'">'+(arm?'Confirm delete':'Delete')+'</button>';
+  return '<button class="lnk" data-act="upw" data-id="'+esc(u.id)+'">Reset password</button><button class="lnk del" data-act="udel" data-id="'+esc(u.id)+'">'+(arm?'Confirm delete':'Delete')+'</button>';
 }
 function adminEntries(){
   const d=D[S.co],out=[],P=d.products;
@@ -1180,6 +1203,7 @@ function piSeen(){try{return new Set(JSON.parse(localStorage.getItem(PI_SEEN_KEY
 function piSave(set){try{localStorage.setItem(PI_SEEN_KEY,JSON.stringify([...set]));}catch(e){}}
 const piSlug=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,'').slice(0,40);
 async function syncPI(manual){
+  if(CLOUD&&!ME)return;
   if(piBusy)return;piBusy=true;
   try{
     const piGet=cols=>fetch(PI_URL+'/rest/v1/pis?select='+cols+'&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
@@ -1189,7 +1213,7 @@ async function syncPI(manual){
     if(res.status===400)res=await piGet(BASE);
     if(!res.ok)throw new Error('HTTP '+res.status);
     const rows=await res.json();
-    const seen=piSeen();let nc=0,np=0,nb=0,na=0,touched=new Set();const adds=[];
+    const seen=CLOUD?PISEEN:piSeen();const seen0=new Set(seen);const cq=[];let nc=0,np=0,nb=0,na=0,touched=new Set();const adds=[];
     rows.forEach(pi=>{
       const k=piCo(pi.company),name=String(pi.buyer_name||'').trim();
       if(!name)return;
@@ -1198,7 +1222,7 @@ async function syncPI(manual){
       const ckey='c|'+k+'|'+piSlug(name);
       if(!cl&&!seen.has(ckey)){
         cl=Object.assign({id:'pi_c_'+k+'_'+piSlug(name),name:name,brand:String(pi.brand_name||'').trim(),gstin:String(pi.buyer_gst||'').toUpperCase(),contact:pi.buyer_contact||'',phone:pi.buyer_phone||'',email:pi.buyer_email||'',city:'',address:pi.buyer_address||'',notes:'Auto-created from PI '+(pi.pi_number||'')},stamp);
-        D[k].clients.set(cl.id,cl);seen.add(ckey);nc++;touched.add(k+'|clients');
+        D[k].clients.set(cl.id,cl);seen.add(ckey);nc++;touched.add(k+'|clients');cq.push({company:k,section:'clients',id:cl.id,data:cl,created_by_name:stamp.createdByName,by_pi:true});
       }
       if(!cl)return;
       /* Entries made by an earlier sync carry the generic 'PI Generator' label; replace it with the real PI creator. */
@@ -1215,7 +1239,7 @@ async function syncPI(manual){
         let p=[...D[k].products.values()].find(x=>x.clientId===cl.id&&norm(x.name)===norm(pn));
         if(!p&&!seen.has(pkey)){
           p=Object.assign({id:'pi_p_'+k+'_'+piSlug(cl.name)+'_'+piSlug(pn),clientId:cl.id,name:pn,cost:rate,advPct:+it.advancePct||0,terms:30},stamp);
-          D[k].products.set(p.id,p);seen.add(pkey);np++;touched.add(k+'|products');
+          D[k].products.set(p.id,p);seen.add(pkey);np++;touched.add(k+'|products');cq.push({company:k,section:'products',id:p.id,data:p,created_by_name:stamp.createdByName,by_pi:true});
         }
         /* Advance: one entry per PI line, with the PI number in the PO number field, the PI quantity and the PI rate.
            Nothing is marked as received; it shows as pending until the real payment is entered. */
@@ -1235,14 +1259,20 @@ async function syncPI(manual){
       try{mode=localStorage.getItem(PI_ADV_KEY)||'';}catch(e){}
       if(!mode&&adds.length>3)go=confirm(adds.length+' PI lines from PI Desk are not in Advance yet.\n\nAdd them now? They are added as pending advance (PO number = PI number, with quantity and rate). Nothing is marked as received.\n\nOK = add them all. Cancel = skip the existing ones and only add new PIs from now on.');
       try{localStorage.setItem(PI_ADV_KEY,go?'all':'new');}catch(e){}
-      adds.forEach(a=>{seen.add(a.akey);if(go){D[a.k].advances.set(a.row.id,a.row);na++;touched.add(a.k+'|advances');}});
+      adds.forEach(a=>{seen.add(a.akey);if(go){D[a.k].advances.set(a.row.id,a.row);na++;touched.add(a.k+'|advances');cq.push({company:a.k,section:'advances',id:a.row.id,data:a.row,created_by_name:a.row.createdByName,by_pi:true});}});
     }
-    touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});
-    piSave(seen);
+    if(CLOUD){
+      const rows=cq.slice();
+      [...seen].filter(x=>!seen0.has(x)).forEach(k=>rows.push({company:'_',section:'pi_seen',id:k,data:{},created_by_name:'pi',by_pi:true}));
+      for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
+    }else{
+      touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});
+      piSave(seen);
+    }
     if(touched.size)buildAll();
     if(nc||np||nb||na){toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
     else if(manual)toast('PI sync: nothing new ('+rows.length+' PIs checked)');
-  }catch(e){if(manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
+  }catch(e){if(!cloudGone(e)&&manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
   finally{piBusy=false;}
 }
 
@@ -1250,7 +1280,7 @@ async function syncPI(manual){
 const STMT_SEEN='orderdesk:stmt:seen';
 let STMT=null;
 const alnum=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-function stmtSeen(){try{return new Set(JSON.parse(localStorage.getItem(STMT_SEEN)||'[]'));}catch(e){return new Set();}}
+function stmtSeen(){let s;try{s=new Set(JSON.parse(localStorage.getItem(STMT_SEEN)||'[]'));}catch(e){s=new Set();}COS.forEach(c=>D[c.key].advances.forEach(a=>{if(a.stmtKey)s.add(a.stmtKey);}));return s;}
 function parseCSV(t){
   const rows=[];let r=[],c='',q=false;
   for(let i=0;i<t.length;i++){const ch=t[i];
@@ -1377,10 +1407,102 @@ async function applyStatement(){
 }
 document.addEventListener('change',e=>{const t=e.target;if(t&&t.id==='stmtFile'&&t.files&&t.files[0]){loadStatement(t.files[0]);t.value='';}});
 
+/* ---------- Cloud: Supabase Auth + shared data (same project as the PI Desk) ---------- */
+const CLOUD=true, SB_SESS_KEY='orderdesk:sb', CLOUD_POLL=20000;
+let sess=null, cloudTimer=null, PISEEN=new Set();
+const emailOf=u=>slug(u)+'@orderdesk.app';
+function loadSess(){try{sess=JSON.parse(localStorage.getItem(SB_SESS_KEY)||'null');}catch(e){sess=null;}}
+function saveSess(s){sess=s;try{if(s)localStorage.setItem(SB_SESS_KEY,JSON.stringify(s));else localStorage.removeItem(SB_SESS_KEY);}catch(e){}}
+function normSess(j){if(!j||!j.access_token)return null;return {access_token:j.access_token,refresh_token:j.refresh_token,expires_at:j.expires_at||Math.floor(Date.now()/1000)+(j.expires_in||3600),user:j.user};}
+async function sbAuth(path,body){
+  const r=await fetch(PI_URL+'/auth/v1/'+path,{method:'POST',headers:{apikey:PI_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  let j={};try{j=await r.json();}catch(e){}
+  if(!r.ok)throw new Error(j.error_description||j.msg||j.message||('HTTP '+r.status));
+  return j;
+}
+async function sbToken(){
+  if(!sess)return null;
+  if(sess.expires_at*1000-Date.now()<90000){
+    try{saveSess(normSess(await sbAuth('token?grant_type=refresh_token',{refresh_token:sess.refresh_token})));}
+    catch(e){if(/refresh|invalid|expired|not found/i.test(e.message))saveSess(null);else throw e;}
+  }
+  return sess?sess.access_token:null;
+}
+async function sbRest(method,path,body,prefer){
+  const tok=await sbToken();if(!tok)throw new Error('Signed out');
+  const h={apikey:PI_KEY,Authorization:'Bearer '+tok,'Content-Type':'application/json'};if(prefer)h.Prefer=prefer;
+  const r=await fetch(PI_URL+'/rest/v1/'+path,{method:method,headers:h,body:body==null?undefined:JSON.stringify(body)});
+  const t=await r.text();let j=null;try{j=t?JSON.parse(t):null;}catch(e){}
+  if(!r.ok)throw new Error((j&&(j.message||j.hint))||('HTTP '+r.status));
+  return j;
+}
+function cloudGone(e){if(e&&/signed out/i.test(e.message||'')&&ME){ME=null;stopCloud();gateMode='login';showGate();toast('Session ended. Please log in again.');return true;}return false;}
+const rowToRec=w=>{const r=Object.assign({},w.data,{id:w.id});r.createdBy=w.by_pi?'pi':(w.created_by||'');r.createdByName=w.created_by_name||r.createdByName||'';if(!r.createdAt)r.createdAt=String(w.created_at||'').slice(0,10);return r;};
+async function cloudLoad(){
+  const rows=[];
+  for(let off=0;;off+=1000){const part=await sbRest('GET','od_records?select=company,section,id,data,created_by,created_by_name,by_pi,created_at&order=created_at.asc,id.asc&limit=1000&offset='+off);rows.push.apply(rows,part);if(part.length<1000)break;}
+  const pr=await sbRest('GET','od_profiles?select=id,username,email,created_at');
+  COS.forEach(c=>SECS.forEach(s=>D[c.key][s].clear()));PISEEN=new Set();
+  rows.forEach(w=>{if(w.section==='pi_seen'){PISEEN.add(w.id);return;}const m=D[w.company]&&D[w.company][w.section];if(m)m.set(w.id,rowToRec(w));});
+  USERS=new Map(pr.map(p=>[p.id,{id:p.id,user:p.username,email:p.email,created:String(p.created_at||'').slice(0,10)}]));
+}
+async function startCloud(){
+  await sbToken();if(!sess)throw new Error('Signed out');
+  await cloudLoad();
+  const u=sess.user||{};
+  ME={id:u.id,email:u.email,user:(u.user_metadata&&u.user_metadata.username)||String(u.email||'').split('@')[0]};
+  document.body.classList.add('cloud');
+  afterLogin();
+  clearInterval(cloudTimer);cloudTimer=setInterval(cloudPoll,CLOUD_POLL);
+  syncPI(false);
+}
+function stopCloud(){clearInterval(cloudTimer);cloudTimer=null;}
+async function cloudPoll(){
+  if(!ME||document.hidden)return;
+  try{await cloudLoad();refresh();}catch(e){cloudGone(e);}
+}
+async function cloudLogout(){
+  const tok=sess&&sess.access_token;
+  try{if(tok)await fetch(PI_URL+'/auth/v1/logout',{method:'POST',headers:{apikey:PI_KEY,Authorization:'Bearer '+tok}});}catch(e){}
+  saveSess(null);stopCloud();ME=null;S.form=null;gateMode='login';
+  COS.forEach(c=>SECS.forEach(s=>D[c.key][s].clear()));USERS=new Map();
+  showGate();
+}
+async function cloudSubmit(user,pw,create){
+  const err=$('#g_err'),go=$('#g_go');
+  go.disabled=true;
+  try{
+    let j;
+    if(create)j=await sbAuth('signup',{email:emailOf(user),password:pw,data:{username:user}});
+    else j=await sbAuth('token?grant_type=password',{email:emailOf(user),password:pw});
+    if(!j.access_token){err.textContent='Sign-up is not finished. In Supabase turn off Authentication → Providers → Email → "Confirm email", then try again.';return;}
+    saveSess(normSess(j));
+    await startCloud();toast(create?'Account created':'Logged in');
+  }catch(e){
+    const m=e.message||'';
+    err.textContent=/already registered|already exists/i.test(m)?'That username is taken. Choose another.':/invalid login|invalid credentials/i.test(m)?'Username or password is not correct.':/failed to fetch|network/i.test(m)?'Cannot reach the server. Check your internet connection.':m;
+    saveSess(null);if(!create)$('#g_pass').select();
+  }finally{go.disabled=false;}
+}
+async function cloudImport(){
+  if(!isAdmin())return;
+  const rows=[];
+  COS.forEach(c=>SECS.forEach(s=>{let a=[];try{a=JSON.parse(localStorage.getItem(lsKey(c.key,s))||'[]');}catch(e){}
+    a.forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi'});});}));
+  piSeen().forEach(k=>rows.push({company:'_',section:'pi_seen',id:k,data:{},created_by_name:'pi',by_pi:true}));
+  if(!rows.length){toast('No data saved in this browser to upload.');return;}
+  if(!confirm('Upload '+rows.length+' entries saved in this browser to the shared cloud?\n\nEntries that already exist in the cloud are left as they are.'))return;
+  try{
+    for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
+    await cloudLoad();buildAll();toast('Uploaded '+rows.length+' entries to the cloud');
+  }catch(e){if(!cloudGone(e))toast('Upload failed: '+e.message);}
+}
+
 initGate();
 loadUI();
 buildAll();
-loadLocal();loadLocalUsers();usersReady=true;gateReady();
+if(CLOUD){loadSess();usersReady=true;if(sess){startCloud().catch(e=>{saveSess(null);showGate();});}else showGate();}
+else{loadLocal();loadLocalUsers();usersReady=true;gateReady();}
 buildAll();
 syncPI(false);setInterval(()=>syncPI(false),PI_EVERY);
 })();
