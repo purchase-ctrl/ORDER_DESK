@@ -521,13 +521,13 @@ function blocks(){
             r:r=>r.pendPct==null?'—':(r.pendAfter<=TOL?chip('ok','Fully paid'):chip('warn',pct(r.pendPct)+' pending')+'<span class="sub">'+inr(r.pendAfter)+'</span>')},
           {h:'Note',t:r=>r.note,cls:'wrapc'}],
         empty:['No advance entries yet','Log each part payment against its PO as it arrives. The pending share is worked out as of each date.']},
-      {id:'adv-stmt',name:'advance received from bank statement',title:'Advance received against PI (from bank statement)',search:1,rows:R.advRows.filter(r=>r.stmtKey).sort((a,b)=>String(b.date).localeCompare(String(a.date))),
+      {id:'adv-stmt',name:'advance received against PI',title:'Advance received against PI',search:1,rows:R.advRows.filter(r=>(+r.received||0)>0.004).sort((a,b)=>String(b.date).localeCompare(String(a.date))),
         cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,cls:'mono'},
           {h:'Advance requested',t:r=>r.req,cls:'n',fmt:inr,s:1},{h:'Advance received',t:r=>+r.received||0,cls:'n',fmt:inr,s:1},
           {h:'UTR details',t:r=>r.utr||(String(r.note||'').match(/\(ref ([^)]+)\)/)||[])[1]||'',cls:'mono wrapc'},
           {h:'Pending advance',t:r=>r.pendPct==null?'':r.pendPct,
             r:r=>{if(r.pendPct==null)return '—';const p=Math.max(0,Math.min(100,r.pendPct));return '<span class="bar" title="'+esc(inr(r.pendAfter))+' pending"><i style="width:'+p+'%"></i></span>'+(r.pendAfter<=TOL?chip('ok','Fully paid'):esc(pct(p))+' <span class="sub">'+esc(inr(r.pendAfter))+'</span>');}}],
-        empty:['No statement payments yet','Attach a bank statement above and add the matched credits. Each one shows here with the PI, the UTR and how much advance is still pending.']}
+        empty:['No statement payments yet','Only PIs that have actually received advance are listed here. Attach a bank statement above and add the matched credits, or log an advance received.']}
     ];
   }
   if(t==='admin'){
