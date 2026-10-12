@@ -292,12 +292,10 @@ table.tight th,table.tight td{padding-left:10px;padding-right:10px}
     h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
     return (4294967296*(2097151&h2)+(h1>>>0)).toString(36);}
   var OK='1tpcwtz9668',KEY='orderdesk:unlocked',L=document.getElementById('lock');
-  function ok(){try{return sessionStorage.getItem(KEY)===OK;}catch(e){return false;}}
-  if(ok())return;
   L.hidden=false;document.documentElement.style.overflow='hidden';
   document.getElementById('lockf').addEventListener('submit',function(e){e.preventDefault();
     var v=document.getElementById('lockp').value;
-    if(hh(v)===OK){try{sessionStorage.setItem(KEY,OK);}catch(x){}L.hidden=true;document.documentElement.style.overflow='';}
+    if(hh(v)===OK){L.hidden=true;document.documentElement.style.overflow='';}
     else{document.getElementById('locke').textContent='Wrong password. Try again.';document.getElementById('lockp').select();}
   });
 })();
