@@ -131,6 +131,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .lnk.polink{padding:2px 6px;margin:-2px -6px;font-family:var(--mono);font-size:inherit;text-decoration:underline;text-underline-offset:3px;text-decoration-color:color-mix(in srgb,var(--accent) 40%,transparent)}
 .lnk.polink::after{content:" ↗";font-size:.8em;opacity:.7}
 .lnk.del{color:var(--bad)}
+.fy-msg{font-size:13px;color:var(--ok);font-weight:500}.fy-msg.bad{color:var(--bad)}
+#fybox code{font-family:var(--mono);font-size:12px;background:var(--head);padding:1px 5px;border-radius:5px}
 .lnk.del:hover{background:var(--bad-bg)}
 input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 12px;min-height:42px;width:100%;min-width:0;transition:border-color .15s,box-shadow .15s}
 input:hover,select:hover,textarea:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
@@ -649,9 +651,9 @@ function calc(d){
     advPending:sum(gl.filter(g=>g.hasAdv),g=>g.pending),
     outstanding:sum(inv,i=>i.pend),
     overdue:inv.filter(i=>i.pend>TOL&&i.due&&daysBetween(today,i.due)<0).length,
-    toDispatch:sum(gl,g=>g.pendDisp||0),
+    toDispatch:sum(gl.filter(g=>g.invQty>0),g=>g.pendDisp||0),
     ready:sum(gl,g=>g.ready),
-    openPOs:gl.filter(g=>g.pendDisp>0).length,
+    openPOs:gl.filter(g=>g.invQty>0&&g.pendDisp>0).length,
     poCount:gl.filter(g=>g.hasAdv).length
   };
   return {groups:gl,advRows:advRows,inv:inv,pay:pay,dis:dis,t:t};
@@ -749,7 +751,7 @@ function blocks(){
   }
   /* dispatches */
   const done=g=>g.poQty>0&&g.dispQty>=g.poQty;
-  const gl=R.groups.filter(g=>S.showDone||!done(g)).sort((a,b)=>(b.ready-a.ready)||((b.pendDisp||0)-(a.pendDisp||0)));
+  const gl=R.groups.filter(g=>g.invQty>0&&(S.showDone||!done(g))).sort((a,b)=>(b.ready-a.ready)||((b.pendDisp||0)-(a.pendDisp||0)));
   const chipD=g=>g.poQty<=0?chip('n0','PO qty not recorded'):(g.dispQty>g.poQty?chip('bad','Over-dispatched'):(done(g)?chip('ok','Complete'):(g.dispQty>g.invQty?chip('warn','Logged > invoiced'):(g.ready>0?chip('warn','Invoiced, add LR'):chip('n0',g.invQty>0?'Awaiting next invoice':'Not invoiced')))));
   return [
     {id:'disp-summary',name:'pending dispatch',title:'Pending dispatch by PO',rows:gl,
@@ -758,7 +760,7 @@ function blocks(){
         {h:'Dispatched',t:r=>r.dispQty,cls:'n',fmt:qty},{h:'Pending dispatch',t:r=>r.pendDisp,cls:'n',fmt:qty,s:1},{h:'Invoiced, LR not logged',t:r=>r.ready,cls:'n',fmt:qty,s:1},
         {h:'Dispatched share',t:r=>r.poQty>0?r.dispQty/r.poQty*100:null,r:r=>{if(!(r.poQty>0))return '—';const p=Math.min(100,r.dispQty/r.poQty*100);return '<span class="bar"><i style="width:'+p+'%"></i></span>'+esc(pct(r.dispQty/r.poQty*100));}},
         {h:'Status',t:r=>r.poQty<=0?'PO qty not recorded':(r.dispQty>r.poQty?'Over-dispatched':(done(r)?'Complete':(r.ready>0?'Invoiced, add LR':'Awaiting invoice'))),r:chipD}],
-      empty:['Nothing pending','Every PO with a recorded quantity has been dispatched, or no PO has been entered yet. Add advance or invoices first.']},
+      empty:['Nothing pending','A PO appears here only after an invoice has been raised against it. Add invoices in Daily Invoicing first, or every invoiced PO has already been dispatched.']},
     {id:'disp-log',name:'dispatch log',title:'Dispatch log',edit:'dispatches',search:1,rows:R.dis,
       cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Invoice no.',t:r=>r.invNo,cls:'mono'},
         {h:'Qty dispatched',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'Transporter',t:r=>r.transporter},{h:'LR / AWB no.',t:r=>r.lr,cls:'mono'},
@@ -860,6 +862,7 @@ function renderBanner(){
     const items=uniq.map(x=>'<li><button type="button" class="lnk polink" data-act="openpi" data-po="'+esc(x.g.po)+'" title="Open this PI in PI Desk"><b>'+esc(x.g.po)+'</b></button> · day '+x.days+'<span>'+esc(cl(x.g))+(x.g.by?' · by '+esc(x.g.by):'')+'</span></li>').join('');
     advHTML+='<div class="note due" role="status"><details class="advnote"><summary><span><strong>Advance not received'+(COS.length>1?' · '+esc(c.name):'')+'</strong> &nbsp;'+uniq.length+(uniq.length===1?' PI is':' PIs are')+' past '+ADV_DAYS+' working days</span><span class="cta">Show PIs</span></summary><ul>'+items+'</ul>'+(S.tab==='advances'?'':'<p style="margin:10px 0 0"><button class="btn sm" data-act="goto" data-tab="advances">Open Advance</button></p>')+'</details></div>';
   });
+  if(fyPending()){const py=fyStartNow()-1;advHTML+='<div class="note due" role="status"><span><strong>'+fyName(py)+' has ended.</strong> Save its backup to Google Drive.</span>'+(S.tab==='admin'?'':'<button class="btn sm" data-act="goto" data-tab="admin">Open backup</button>')+'</div>';}
   sampleHTML=sampleHTML+advHTML;
   if(!parts.length){el.innerHTML=sampleHTML;return;}
   el.innerHTML=sampleHTML+'<div class="note due" role="status"><span>Payment due. '+parts.join(' &nbsp;·&nbsp; ')+'</span>'+(S.tab==='payments'?'':'<button class="btn sm" data-act="goto" data-tab="payments">View payments</button>')+'</div>';
@@ -911,7 +914,7 @@ function buildPanel(){
     '<input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button>':'')+
-    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div><div id="listHost"></div>';
+    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
 }
@@ -1163,6 +1166,7 @@ document.addEventListener('click',e=>{
   else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';S.filters={};S.sorts={};closeFilter();saveUI();renderTabs();buildPanel();}
   else if(act==='cloudimport'){cloudImport();}
   else if(act==='pname'){if(isAdmin())showPiName(a.dataset.id);}
+  else if(act==='fybk'){fyBackup(a.dataset.mode);}
   else if(act==='openpi'){openPI(a.dataset.po);}
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
   else if(act==='stmtapply'){applyStatement();}
@@ -1668,6 +1672,91 @@ async function openPI(po){
     const url=PI_SITE+'/preview.html?id='+encodeURIComponent(id);
     if(w)w.location.href=url;else window.location.href=url;
   }catch(e){fail('Could not reach PI Desk. Check your internet and try again.');}
+}
+/* ---------- Financial-year backup (admin): download, or save straight to Google Drive ---------- */
+/* To enable "Save to Google Drive": create an OAuth Client ID (type: Web application) in Google Cloud Console,
+   enable the Google Drive API, add this site's address under Authorised JavaScript origins, and paste the ID here. */
+const GOOGLE_CLIENT_ID='';
+const FY_KEY='orderdesk:fybk',FY_HINT='orderdesk:fyhint',DRIVE_FOLDER='Sunshine Order Desk Backups';
+const fyStartNow=()=>{const d=new Date();return d.getMonth()>=3?d.getFullYear():d.getFullYear()-1;};
+const fyName=y=>'FY '+y+'-'+String((y+1)%100).padStart(2,'0');
+const fyDone=()=>{try{return JSON.parse(localStorage.getItem(FY_KEY)||'{}');}catch(e){return {};}};
+function fyMarkDone(y){const o=fyDone();o[y]=new Date().toISOString();try{localStorage.setItem(FY_KEY,JSON.stringify(o));}catch(e){}}
+function fyPending(){return isAdmin()&&!fyDone()[fyStartNow()-1];}   /* last financial year has ended (31 Mar) and is not yet backed up */
+function fySnapshot(y){
+  const out={app:'order-desk',version:1,financialYear:fyName(y),exported:new Date().toISOString(),data:{}};
+  COS.forEach(c=>{out.data[c.key]={};SECS.forEach(s=>{out.data[c.key][s]=[...D[c.key][s].values()];});});
+  return out;
+}
+async function fyXlsx(snap){
+  const X=await loadXLSX(),wb=X.utils.book_new();
+  COS.forEach(c=>SECS.forEach(sec=>{
+    const rows=(snap.data[c.key][sec]||[]).map(r=>{const o={};Object.keys(r).forEach(k=>{const v=r[k];o[k]=(v&&typeof v==='object')?JSON.stringify(v):v;});return o;});
+    X.utils.book_append_sheet(wb,X.utils.json_to_sheet(rows.length?rows:[{}]),(c.key+'-'+sec).slice(0,31));
+  }));
+  return new Blob([X.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function gisLoad(){
+  return new Promise((res,rej)=>{
+    if(window.google&&google.accounts&&google.accounts.oauth2)return res();
+    const sc=document.createElement('script');sc.src='https://accounts.google.com/gsi/client';
+    sc.onload=()=>res();sc.onerror=()=>rej(new Error('Could not load Google sign-in (offline?).'));document.head.appendChild(sc);});
+}
+async function gToken(hint){
+  await gisLoad();
+  return new Promise((res,rej)=>{
+    const tc=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:'https://www.googleapis.com/auth/drive.file',login_hint:hint||undefined,
+      callback:r=>r&&r.access_token?res(r.access_token):rej(new Error((r&&r.error_description)||(r&&r.error)||'Google sign-in was cancelled')),
+      error_callback:e=>rej(new Error((e&&e.message)||'Google sign-in was cancelled'))});
+    tc.requestAccessToken({prompt:hint?'':'select_account'});
+  });
+}
+async function gApi(tok,url,opt){
+  const r=await fetch(url,Object.assign({},opt,{headers:Object.assign({Authorization:'Bearer '+tok},(opt&&opt.headers)||{})}));
+  if(!r.ok)throw new Error('Google Drive said '+r.status);
+  return r.json();
+}
+async function driveFolder(tok){
+  const q=encodeURIComponent("name='"+DRIVE_FOLDER+"' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  const f=await gApi(tok,'https://www.googleapis.com/drive/v3/files?q='+q+'&fields=files(id)');
+  if(f.files&&f.files.length)return f.files[0].id;
+  const c=await gApi(tok,'https://www.googleapis.com/drive/v3/files?fields=id',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:DRIVE_FOLDER,mimeType:'application/vnd.google-apps.folder'})});
+  return c.id;
+}
+async function driveUpload(tok,folder,name,blob){
+  const bd='odb'+Date.now(),meta=JSON.stringify({name:name,parents:[folder]});
+  const body=new Blob(['--'+bd+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+meta+'\r\n--'+bd+'\r\nContent-Type: '+(blob.type||'application/octet-stream')+'\r\n\r\n',blob,'\r\n--'+bd+'--']);
+  return gApi(tok,'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+bd},body:body});
+}
+function fyStatus(m,bad){const e=$('#fy_msg');if(e){e.textContent=m;e.className='fy-msg'+(bad?' bad':'');}}
+async function fyBackup(mode){
+  const sel=$('#fy_sel'),y=sel?+sel.value:fyStartNow()-1,snap=fySnapshot(y),stamp=todayStr(),base='OrderDesk_'+fyName(y).replace(' ','')+'_backup_'+stamp;
+  const jsonBlob=new Blob([JSON.stringify(snap,null,1)],{type:'application/json'});
+  try{
+    if(mode==='drive'){
+      if(!GOOGLE_CLIENT_ID){fyStatus('Google Drive is not connected yet. Use "Download backup" now, or add the Google Client ID (see the note below).',true);return;}
+      const hint=($('#fy_mail')&&$('#fy_mail').value.trim())||'';try{localStorage.setItem(FY_HINT,hint);}catch(e){}
+      fyStatus('Signing in to Google…');const tok=await gToken(hint);
+      fyStatus('Preparing the Excel copy…');let xl=null;try{xl=await fyXlsx(snap);}catch(e){}
+      fyStatus('Saving to Google Drive…');const fid=await driveFolder(tok);
+      const j=await driveUpload(tok,fid,base+'.json',jsonBlob);if(xl)await driveUpload(tok,fid,base+'.xlsx',xl);
+      fyMarkDone(y);fyStatus('Saved to Google Drive, folder "'+DRIVE_FOLDER+'": '+base+'.json'+(xl?' and .xlsx':'')+'.');refresh();
+    }else{
+      saveBlob(base+'.json',JSON.stringify(snap,null,1),'application/json');
+      let note='';try{const xl=await fyXlsx(snap);const u=URL.createObjectURL(xl),a=document.createElement('a');a.href=u;a.download=base+'.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500);}catch(e){note=' (the Excel copy needs internet; the JSON copy is complete)';}
+      fyMarkDone(y);fyStatus('Downloaded '+base+'.json'+note+'. Upload it to your Drive.');refresh();
+    }
+  }catch(e){fyStatus(e.message||'Backup failed',true);}
+}
+function fyCardHTML(){
+  const cur=fyStartNow(),done=fyDone();
+  const opts=[cur-1,cur,cur-2,cur-3].map(y=>'<option value="'+y+'"'+(y===cur-1?' selected':'')+'>'+fyName(y)+(y===cur?' (running)':'')+(done[y]?' · backed up '+fd(done[y].slice(0,10)):'')+'</option>').join('');
+  let hint='';try{hint=localStorage.getItem(FY_HINT)||'';}catch(e){}
+  return '<div class="form" id="fybox"><h3>Financial year backup</h3><p class="muted">The financial year runs 1 April to 31 March. After it ends, save a full copy of every company’s clients, products, advances, invoices, payments and dispatches to the admin’s Google Drive. You get a restorable JSON file and an Excel copy.</p>'+
+    '<div class="grid"><div class="f"><label for="fy_sel">Financial year</label><select id="fy_sel">'+opts+'</select></div>'+
+    '<div class="f"><label for="fy_mail">Admin Google account (optional)</label><input id="fy_mail" type="email" value="'+esc(hint)+'" placeholder="admin@yourcompany.com" autocomplete="email"></div></div>'+
+    '<div class="fa"><button class="btn primary" type="button" data-act="fybk" data-mode="drive">Save to Google Drive</button><button class="btn" type="button" data-act="fybk" data-mode="dl">Download backup</button><span id="fy_msg" class="fy-msg" role="status"></span></div>'+
+    (GOOGLE_CLIENT_ID?'':'<p class="muted"><strong>One-time setup for Drive:</strong> in Google Cloud Console create an OAuth Client ID (Web application), turn on the Google Drive API, add this site’s address as an authorised JavaScript origin, and put the Client ID in <code>GOOGLE_CLIENT_ID</code> at the top of the backup code. Until then, use Download backup and drop the files into Drive.</p>')+'</div>';
 }
 async function applyStatement(){
   if(!STMT)return;
