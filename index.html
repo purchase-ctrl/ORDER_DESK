@@ -946,7 +946,7 @@ const FORMS={
       fld('p_adv','Advance (% of final cost) *','number',advPctOf(r)==null?'':Math.round(advPctOf(r)*100)/100,NUM,1)+
       fld('p_terms','Payment terms (days)','number',r.terms==null?30:r.terms,'inputmode="numeric" step="1" min="0"'));},
   advances:r=>{r=r||{};return wrapForm(r.id?'Edit advance entry':'New advance received',
-    chainHTML(r)+fld('a_refpo','Reference PO number','text',r.refPo||'','autocomplete="off" placeholder="Buyer\'s own PO number (optional)"')+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
+    chainHTML(r)+fld('a_refpo','Reference PO number','text',r.refPo||'','autocomplete="off" placeholder="Buyer\'s PO no."')+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
     fld('a_rate','PO rate (₹ per unit) *','number',r.poRate==null?'':r.poRate,NUM)+fld('a_recv','Advance received (₹) *','number',r.received==null?'':r.received,NUM)+
     area('a_note','Note',r.note),true);},
   invoices:r=>{r=r||{};return wrapForm(r.id?'Edit invoice':'New invoice',
