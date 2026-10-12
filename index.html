@@ -656,7 +656,9 @@ function calc(d){
     openPOs:gl.filter(g=>g.invQty>0&&g.pendDisp>0).length,
     poCount:gl.filter(g=>g.hasAdv).length
   };
-  return {groups:gl,advRows:advRows,inv:inv,pay:pay,dis:dis,t:t};
+  const refMap=new Map();adv.forEach(a=>{const rp=String(a.refPo||'').trim(),k=String(a.po||'').trim().toLowerCase();if(rp&&k&&!refMap.has(k))refMap.set(k,rp);});
+  groups.forEach(g=>{g.refPo=refMap.get(String(g.po||'').trim().toLowerCase())||'';});
+  return {groups:gl,advRows:advRows,inv:inv,pay:pay,dis:dis,t:t,refMap:refMap};
 }
 function recompute(){R=calc(dataFor(S.co));}
 
@@ -694,14 +696,14 @@ function blocks(){
     const chipAdv=g=>g.required<=0?chip('n0','No advance set'):(g.pending<=TOL?(g.excess>TOL?chip('warn','Excess '+inr(g.excess)):chip('ok','Complete')):(g.piDate&&workDaysSince(g.piDate)>ADV_DAYS?chip('bad','Overdue · day '+workDaysSince(g.piDate)):chip('warn','Pending')));
     return [
       {id:'adv-summary',name:'advance position by PO',title:'Advance position by PO',rows:R.groups.filter(g=>g.hasAdv).sort((a,b)=>cl(a).localeCompare(cl(b))||pr(a).localeCompare(pr(b))||a.po.localeCompare(b.po)),
-        cols:[{h:'PI date',t:r=>r.piDate||'',fmt:fd,s:1},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
+        cols:[{h:'PI date',t:r=>r.piDate||'',fmt:fd,s:1},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
           {h:'Order value',t:r=>r.orderValue,cls:'n',fmt:inr},{h:'Created by',t:r=>r.by||'',r:r=>r.by?'<span class="chip br">'+esc(r.by)+'</span>':'<span class="dim">—</span>'},{h:'Advance required',t:r=>r.required,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.received,cls:'n',fmt:inr,s:1},
           {h:'Pending',t:r=>r.pending,cls:'n',fmt:inr,s:1},{h:'Received %',t:r=>r.recvPct,cls:'n',fmt:pct},
           {h:'Adjusted in invoices',t:r=>r.adjusted,cls:'n',fmt:inr,s:1},{h:'Not yet adjusted',t:r=>r.unadj,cls:'n',fmt:inr,s:1},
           {h:'Status',t:r=>r.required<=0?'No advance set':(r.pending<=TOL?(r.excess>TOL?'Excess':'Complete'):(r.piDate&&workDaysSince(r.piDate)>ADV_DAYS?'Overdue':'Pending')),r:chipAdv}],
         empty:['No advance recorded','Once you log advance received, each PO shows what is required, received and still pending here.']},
       {id:'adv-stmt',name:'advance received against PI',title:'Advance received against PI',edit:'advances',search:1,rows:R.advRows.filter(r=>(+r.received||0)>0.004).sort((a,b)=>String(b.date).localeCompare(String(a.date))),
-        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'PI date',t:r=>(r.g&&r.g.piDate)||'',fmt:fd},
+        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PI date',t:r=>(r.g&&r.g.piDate)||'',fmt:fd},
           {h:'Advance requested',t:r=>r.req,cls:'n',fmt:inr,s:1},{h:'Advance received',t:r=>+r.received||0,cls:'n',fmt:inr,s:1},
           {h:'UTR details',t:r=>r.utr||(String(r.note||'').match(/\(ref ([^)]+)\)/)||[])[1]||'',cls:'mono wrapc'},
           {h:'Pending advance',t:r=>r.pendPct==null?'':r.pendPct,
@@ -726,13 +728,13 @@ function blocks(){
     const stChip=r=>{if(r.pend<=TOL)return chip('ok','Paid');const dd=r.due?daysBetween(today,r.due):null;if(dd!=null&&dd<0)return chip('bad',(-dd)+'d overdue');return chip(r.paid>0?'warn':'n0',r.paid>0?'Part paid':'Unpaid');};
     return [{id:'pay-status',name:'payment status',title:'Invoice payment status',rows:open,
       extra:'<label class="chk"><input type="checkbox" id="showdone"'+(S.showDone?' checked':'')+'> Show paid invoices</label>',
-      cols:[{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},
+      cols:[{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},
         {h:'Due date',t:r=>r.due,fmt:fd},{h:'Amount due',t:r=>r.net,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.paid,cls:'n',fmt:inr,s:1},{h:'Pending',t:r=>r.pend,cls:'n',fmt:inr,s:1},
         {h:'Status',t:r=>r.pend<=TOL?'Paid':(r.due&&daysBetween(today,r.due)<0?'Overdue':(r.paid>0?'Part paid':'Unpaid')),r:stChip},
         {h:'',t:r=>'',r:r=>'<button class="btn sm" data-act="payfor" data-id="'+esc(r.id)+'">Record payment</button> <button class="btn sm" data-act="remind" data-id="'+esc(r.id)+'">Email reminder</button>'}],
       empty:['No pending payments','Every invoice is paid, or no invoice has been raised yet. Add invoices in Daily Invoicing.']},
      {id:'pay-log',name:'payment log',title:'Payments received',edit:'payments',search:1,rows:R.pay,
-      cols:[{h:'Date received',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.i?r.i.invNo:'(removed invoice)',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.i?r.i.po:'',r:r=>polink((r=>r.i?r.i.po:'')(r)),cls:'mono'},
+      cols:[{h:'Date received',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.i?r.i.invNo:'(removed invoice)',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.i?r.i.po:'',r:r=>polink((r=>r.i?r.i.po:'')(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.i?r.i.po:''),cls:'mono'},
         {h:'Amount received',t:r=>r.amt,cls:'n',fmt:inr,s:1},{h:'Mode',t:r=>r.mode},{h:'Reference',t:r=>r.ref,cls:'mono'},
         {h:'Pending on invoice after this',t:r=>r.pendAfter,cls:'n',fmt:inr},{h:'Note',t:r=>r.note,cls:'wrapc'}],
       empty:['No payments recorded','Use Record payment on an invoice above. Each payment reduces that invoice’s pending amount.']}];
@@ -740,7 +742,7 @@ function blocks(){
   if(t==='invoices'){
     return [{id:'invoices',name:'invoices',title:'Invoices',edit:'invoices',search:1,rows:R.inv,
       cols:[{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},
-        {h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Invoice qty',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'PO qty',t:r=>r.g.poQty||null,cls:'n',fmt:qty},
+        {h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'Invoice qty',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'PO qty',t:r=>r.g.poQty||null,cls:'n',fmt:qty},
         {h:'Remaining qty',t:r=>r.remain,cls:'n',fmt:qty,r:r=>r.remain==null?'—':(r.remain<0?esc(qty(r.remain))+' '+chip('bad','Over PO'):esc(qty(r.remain)))},
         {h:'Non-GST amount',t:r=>r.nonGst,cls:'n',fmt:inr,s:1},{h:'Freight + dev. charges',t:r=>r.extra,cls:'n',fmt:inr,s:1},{h:'GST 18%',t:r=>r.gst,cls:'n',fmt:inr,s:1},
         {h:'Invoice total',t:r=>r.total,cls:'n',fmt:inr,s:1},{h:'Advance adjusted',t:r=>r.adj,cls:'n',fmt:inr,s:1},{h:'Advance left on PO',t:r=>r.advLeft,cls:'n',fmt:inr},
@@ -756,13 +758,13 @@ function blocks(){
   return [
     {id:'disp-summary',name:'pending dispatch',title:'Pending dispatch by PO',rows:gl,
       extra:'<label class="chk"><input type="checkbox" id="showdone"'+(S.showDone?' checked':'')+'> Show completed POs</label>',
-      cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'PO qty',t:r=>r.poQty||null,cls:'n',fmt:qty},{h:'Invoiced',t:r=>r.invQty,cls:'n',fmt:qty},
+      cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PO qty',t:r=>r.poQty||null,cls:'n',fmt:qty},{h:'Invoiced',t:r=>r.invQty,cls:'n',fmt:qty},
         {h:'Dispatched',t:r=>r.dispQty,cls:'n',fmt:qty},{h:'Pending dispatch',t:r=>r.pendDisp,cls:'n',fmt:qty,s:1},{h:'Invoiced, LR not logged',t:r=>r.ready,cls:'n',fmt:qty,s:1},
         {h:'Dispatched share',t:r=>r.poQty>0?r.dispQty/r.poQty*100:null,r:r=>{if(!(r.poQty>0))return '—';const p=Math.min(100,r.dispQty/r.poQty*100);return '<span class="bar"><i style="width:'+p+'%"></i></span>'+esc(pct(r.dispQty/r.poQty*100));}},
         {h:'Status',t:r=>r.poQty<=0?'PO qty not recorded':(r.dispQty>r.poQty?'Over-dispatched':(done(r)?'Complete':(r.ready>0?'Invoiced, add LR':'Awaiting invoice'))),r:chipD}],
       empty:['Nothing pending','A PO appears here only after an invoice has been raised against it. Add invoices in Daily Invoicing first, or every invoiced PO has already been dispatched.']},
     {id:'disp-log',name:'dispatch log',title:'Dispatch log',edit:'dispatches',search:1,rows:R.dis,
-      cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Invoice no.',t:r=>r.invNo,cls:'mono'},
+      cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'Invoice no.',t:r=>r.invNo,cls:'mono'},
         {h:'Qty dispatched',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'Transporter',t:r=>r.transporter},{h:'LR / AWB no.',t:r=>r.lr,cls:'mono'},
         {h:'Status',t:r=>r.status,r:r=>chip(r.status==='Delivered'?'ok':'warn',r.status||'Dispatched')}],
       empty:['No dispatches logged','Log each dispatch with its transporter and LR number. Pending quantities above update as you go.']}
@@ -947,7 +949,7 @@ const FORMS={
       fld('p_adv','Advance (% of final cost) *','number',advPctOf(r)==null?'':Math.round(advPctOf(r)*100)/100,NUM,1)+
       fld('p_terms','Payment terms (days)','number',r.terms==null?30:r.terms,'inputmode="numeric" step="1" min="0"'));},
   advances:r=>{r=r||{};return wrapForm(r.id?'Edit advance entry':'New advance received',
-    chainHTML(r)+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
+    chainHTML(r)+fld('a_refpo','Reference PO number','text',r.refPo||'','autocomplete="off" placeholder="Buyer\'s PO no."')+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
     fld('a_rate','PO rate (₹ per unit) *','number',r.poRate==null?'':r.poRate,NUM)+fld('a_recv','Advance received (₹) *','number',r.received==null?'':r.received,NUM)+
     area('a_note','Note',r.note),true);},
   invoices:r=>{r=r||{};return wrapForm(r.id?'Edit invoice':'New invoice',
@@ -1011,7 +1013,7 @@ const PREV={
   advances:()=>{
     const el=$('#prev'),pid=val('f_product'),po=val('f_po'),pq=num('a_qty');
     if(!pid||!po||!pq){el.innerHTML='<span class="muted">Pick the product, then enter the PO number and quantity to see the advance position.</span>';return;}
-    const row={id:draftId(),date:val('a_date')||todayStr(),productId:pid,po:po,poQty:pq,poRate:num('a_rate'),received:num('a_recv'),note:''};
+    const row={id:draftId(),date:val('a_date')||todayStr(),productId:pid,po:po,poQty:pq,poRate:num('a_rate'),received:num('a_recv'),refPo:val('a_refpo'),note:''};
     const g=findGroup(sim('advances',row),po,pid);
     if(!g||g.advUnit<=0){el.innerHTML='<span class="muted">This product has no advance % set. Edit the product first.</span>';return;}
     el.innerHTML=pv('Advance required',inr(g.required))+pv('Received incl. this entry',inr(g.received))+pv('Still pending',inr(g.pending))+(g.excess>TOL?pv('Excess received',inr(g.excess)):'');
@@ -1098,7 +1100,7 @@ function readForm(sec){
     if(!(num('a_qty')>0))return {err:'Enter the PO quantity.'};
     if(!(num('a_rate')>0))return {err:'Enter the PO rate.'};
     if(!(num('a_recv')>0))return {err:'Enter the advance received.'};
-    return {row:{id:id,date:val('a_date'),productId:pid,po:po,poQty:num('a_qty'),poRate:num('a_rate'),received:num('a_recv'),note:val('a_note')}};
+    return {row:{id:id,date:val('a_date'),productId:pid,po:po,poQty:num('a_qty'),poRate:num('a_rate'),received:num('a_recv'),refPo:val('a_refpo'),note:val('a_note')}};
   }
   if(sec==='invoices'){
     const no=val('i_no');
@@ -1428,14 +1430,37 @@ function piCo(c){c=String(c||'').toLowerCase();if(/cosm/.test(c))return 'scp';if
 function piSeen(){try{return new Set(JSON.parse(localStorage.getItem(PI_SEEN_KEY)||'[]'));}catch(e){return new Set();}}
 function piSave(set){try{localStorage.setItem(PI_SEEN_KEY,JSON.stringify([...set]));}catch(e){}}
 const piSlug=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,'').slice(0,40);
+/* Cloud mode: copy each PI's Reference PO number onto the advance entries made from it (only where the entry has none).
+   Reads the PIs this login is allowed to see, so people only ever get their own PIs' reference numbers. */
+async function cloudFillRefPo(){
+  let n=0;
+  try{
+    const pis=await sbRest('GET','pis?select=pi_number,ref_po&ref_po=not.is.null&limit=1000');
+    const m=new Map();(pis||[]).forEach(p=>{const rp=String(p.ref_po||'').trim(),k=norm(p.pi_number);if(rp&&k)m.set(k,rp);});
+    if(!m.size)return 0;
+    for(const c of COS){
+      for(const a of D[c.key].advances.values()){
+        if(a.createdBy!=='pi'||String(a.refPo||'').trim())continue;
+        const rp=m.get(norm(a.po));if(!rp)continue;
+        const upd=Object.assign({},a,{refPo:rp});
+        try{await sbRest('PATCH','od_records?company=eq.'+c.key+'&section=eq.advances&id=eq.'+encodeURIComponent(a.id),{data:upd},'return=minimal');D[c.key].advances.set(a.id,upd);n++;}catch(e){}
+      }
+    }
+  }catch(e){/* PI Desk has no ref_po column or the PIs are not readable: skip quietly */}
+  return n;
+}
 async function syncPI(manual){
   if(CLOUD){
     /* In cloud mode the database does the sync and stamps each row with the PI creator, so users only see their own PIs. */
     if(!ME||piBusy)return;piBusy=true;
     try{
       const r=await sbRest('POST','rpc/od_sync_pis',{});
-      await cloudLoad();refresh();
+      await cloudLoad();
+      const nrp=await cloudFillRefPo();
+      refresh();
       const n=r?(+r.clients||0)+(+r.products||0)+(+r.advances||0):0;
+      if(nrp)toast('PI sync: '+nrp+' reference PO(s) filled'+(n?' · '+n+' new entr'+(n===1?'y':'ies'):''));
+      else
       if(n)toast('PI sync: '+(r.clients||0)+' new client(s), '+(r.products||0)+' new product(s), '+(r.advances||0)+' advance entr'+((r.advances||0)===1?'y':'ies'));
       else if(manual)toast('PI sync: nothing new');
     }catch(e){if(!cloudGone(e)&&manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
@@ -1446,12 +1471,13 @@ async function syncPI(manual){
   try{
     const piGet=cols=>fetch(PI_URL+'/rest/v1/pis?select='+cols+'&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
     const BASE='id,created_by,company,pi_number,buyer_name,buyer_contact,buyer_phone,buyer_email,buyer_gst,buyer_address,pi_date,items';
-    let res=await piGet(BASE+',brand_name');
-    /* If the PI database has no brand_name column yet, carry on without brands instead of failing the whole sync. */
+    let res=await piGet(BASE+',brand_name,ref_po');
+    /* If the PI database lacks the brand_name or ref_po column, carry on without them instead of failing the whole sync. */
+    if(res.status===400)res=await piGet(BASE+',brand_name');
     if(res.status===400)res=await piGet(BASE);
     if(!res.ok)throw new Error('HTTP '+res.status);
     const rows=await res.json();
-    const seen=CLOUD?PISEEN:piSeen();const seen0=new Set(seen);const cq=[];let nc=0,np=0,nb=0,na=0,touched=new Set();const adds=[];
+    const seen=CLOUD?PISEEN:piSeen();const seen0=new Set(seen);const cq=[];let nc=0,np=0,nb=0,na=0,touched=new Set();const adds=[],upd=[];
     rows.forEach(pi=>{
       const k=piCo(pi.company),name=String(pi.buyer_name||'').trim();
       if(!name)return;
@@ -1484,11 +1510,14 @@ async function syncPI(manual){
         if(fixN(p))touched.add(k+'|products');
         const pino=String(pi.pi_number||'').trim(),qty=+it.qty;
         if(!ME||!p||!pino||!(qty>0))return;
+        /* Fill the Reference PO on entries this sync created earlier, when the PI has one and the entry does not. */
+        const rpv=String(pi.ref_po||'').trim();
+        if(rpv)D[k].advances.forEach(a=>{if(a.createdBy==='pi'&&norm(a.po)===norm(pino)&&!String(a.refPo||'').trim()){a.refPo=rpv;upd.push({k:k,a:a});}});
         const akey='a|'+k+'|'+piSlug(pino)+'|'+ix;
         if(seen.has(akey))return;
         const have=[...D[k].advances.values()].some(a=>norm(a.po)===norm(pino)&&a.productId===p.id)||adds.some(a=>a.k===k&&norm(a.row.po)===norm(pino)&&a.row.productId===p.id);
         if(have){seen.add(akey);return;}
-        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,received:0,note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
+        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,received:0,refPo:String(pi.ref_po||'').trim(),note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
       });
     });
     if(adds.length){
@@ -1499,7 +1528,9 @@ async function syncPI(manual){
       try{localStorage.setItem(PI_ADV_KEY,go?'all':'new');}catch(e){}
       adds.forEach(a=>{seen.add(a.akey);if(go){D[a.k].advances.set(a.row.id,a.row);na++;touched.add(a.k+'|advances');cq.push({company:a.k,section:'advances',id:a.row.id,data:a.row,created_by_name:a.row.createdByName,by_pi:true});}});
     }
+    upd.forEach(u=>touched.add(u.k+'|advances'));
     if(CLOUD){
+      for(const u of upd){try{await sbRest('PATCH','od_records?company=eq.'+u.k+'&section=eq.advances&id=eq.'+encodeURIComponent(u.a.id),{data:u.a},'return=minimal');}catch(e){}}
       const rows=cq.slice();
       [...seen].filter(x=>!seen0.has(x)).forEach(k=>rows.push({company:'_',section:'pi_seen',id:k,data:{},created_by_name:'pi',by_pi:true}));
       for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
@@ -1508,7 +1539,7 @@ async function syncPI(manual){
       piSave(seen);
     }
     if(touched.size)buildAll();
-    if(nc||np||nb||na){toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
+    if(nc||np||nb||na||upd.length){toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(upd.length?', '+upd.length+' reference PO(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
     else if(manual)toast('PI sync: nothing new ('+rows.length+' PIs checked)');
   }catch(e){if(!cloudGone(e)&&manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
   finally{piBusy=false;}
@@ -1656,6 +1687,7 @@ async function loadStatement(file){
 /* ---------- open a PI in the PI Desk ---------- */
 const PI_SITE='https://pi-generator-theta.vercel.app';
 const PI_IDS=new Map();
+const refOf=po=>(R&&R.refMap&&R.refMap.get(String(po||'').trim().toLowerCase()))||'';
 const polink=po=>{po=String(po||'').trim();return po?'<button type="button" class="lnk polink" data-act="openpi" data-po="'+esc(po)+'" title="Open this PI in PI Desk">'+esc(po)+'</button>':'';};
 async function openPI(po){
   po=String(po||'').trim();if(!po)return;
