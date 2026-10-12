@@ -1379,28 +1379,62 @@ function poOptions(){
     const p=D[S.co].products.get(g.pid),c=p&&D[S.co].clients.get(p.clientId);if(c&&!o.client)o.client=c.name;});
   return [...m.values()];
 }
+const NAME_STOP=new Set(['PVT','PRIVATE','LTD','LIMITED','LLP','INDIA','INDUSTRIES','COMPANY','CO','AND','THE','OF','AN','M','S','MS','MR','MRS','SHRI','SMT']);
+function nameTokens(n){return String(n||'').toUpperCase().split(/[^A-Z0-9]+/).filter(w=>w.length>=3&&!NAME_STOP.has(w));}
+/* Clients (of the open PO list) whose name appears in a bank narration. Narrations are often cut short, so the first word
+   is enough when no other client shares it; otherwise the first two words must both appear. */
+function clientsInNarr(n,opts){
+  const names=[...new Set(opts.map(o=>o.client).filter(Boolean))];
+  const toks=names.map(nm=>({nm:nm,t:nameTokens(nm)})).filter(x=>x.t.length);
+  return toks.filter(x=>{
+    if(!n.includes(x.t[0]))return false;
+    const shared=toks.filter(y=>y!==x&&y.t[0]===x.t[0]).length;
+    return x.t.length<2||n.includes(x.t[1])||!shared;
+  }).map(x=>x.nm);
+}
 function matchStatement(items){
   const opts=poOptions(),seen=stmtSeen();
+  const taken=new Set();
   return items.map(it=>{
-    const n=alnum(it.narr+' '+it.ref);let po=null,how='';
+    const n=alnum(it.narr+' '+it.ref),nn=String(it.narr||'').toUpperCase().replace(/[^A-Z0-9]+/g,' ');
+    let po=null,how='',on=false,client='';
     const hit=opts.filter(o=>alnum(o.po).length>=6&&n.includes(alnum(o.po)));
-    if(hit.length===1){po=hit[0];how='PI number';}
+    if(hit.length===1){po=hit[0];how='PI number';on=true;client=po.client;}
     else{
-      const cand=opts.filter(o=>{const w=alnum(o.client);return w.length>=4&&n.includes(w.slice(0,Math.min(w.length,10)))&&Math.abs(o.pending-it.amt)<=1;});
-      if(cand.length===1){po=cand[0];how='Client + amount';}
+      const cn=clientsInNarr(nn,opts);
+      if(cn.length===1){
+        client=cn[0];
+        const mine=opts.filter(o=>o.client===client);
+        const exact=mine.filter(o=>Math.abs(o.pending-it.amt)<=1);
+        const open=mine.filter(o=>o.pending>1);
+        if(exact.length===1){po=exact[0];how='Client + amount';on=true;}
+        else if(open.length===1){po=open[0];how='Client (only open PI)';}
+        else if(mine.length)how='Client matched, pick PI';
+      }
     }
-    const dup=seen.has(it.key);
-    return Object.assign({},it,{po:po?norm(po.po):'',how:how,dup:dup,on:!!po&&!dup&&how==='PI number'});
+    if(on&&po&&!seen.has(it.key)){const k=norm(po.po);if(taken.has(k)){on=false;how='Already matched by another credit'}else taken.add(k);}
+    return Object.assign({},it,{po:po?norm(po.po):'',how:how,client:client,dup:seen.has(it.key),on:on&&!seen.has(it.key)});
   });
 }
 function renderStmt(){
-  const fh=$('#formHost');if(!STMT){return;}
+  const fh=$('#formHost');if(!STMT)return;
   const opts=poOptions();
-  const optHtml=sel=>'<option value="">Not matched</option>'+opts.map(o=>'<option value="'+esc(norm(o.po))+'"'+(sel===norm(o.po)?' selected':'')+'>'+esc(o.po)+(o.client?' · '+esc(o.client):'')+' · pending '+inr(o.pending)+'</option>').join('');
-  const body=STMT.rows.map((r,i)=>'<tr><td><input type="checkbox" data-sr="'+i+'" '+(r.on?'checked':'')+(r.dup?' disabled':'')+' aria-label="Add this payment"></td><td>'+fd(r.date)+'</td><td class="wrapc">'+esc(r.narr||'—')+'</td><td class="n">'+inr(r.amt)+'</td><td>'+(r.dup?'<span class="chip n0">Already added</span>':'<select data-ss="'+i+'">'+optHtml(r.po)+'</select>'+(r.how?'<span class="dim"> '+esc(r.how)+'</span>':''))+'</td></tr>').join('');
-  fh.innerHTML='<div class="form" id="stmtbox"><h3>Bank statement · '+esc(STMT.name)+'</h3><p class="muted">'+STMT.rows.length+' credit(s) found. Payments that carry a PI number are ticked. Others need a PO picked and ticking. Each ticked payment is added as an Advance received entry against that PI.</p>'+
-   (STMT.rows.length?'<div class="tw"><table class="tight"><thead><tr><th></th><th>Date</th><th>Narration</th><th class="n">Credit</th><th>Against PI</th></tr></thead><tbody>'+body+'</tbody></table></div>':'<p>No credit entries found in this file.</p>')+
-   '<div class="fa"><button class="btn primary" data-act="stmtapply">Add selected</button><button class="btn" data-act="stmtcancel">Close</button></div></div>';
+  const optHtml=(sel,client)=>{
+    const first=opts.filter(o=>client&&o.client===client),rest=opts.filter(o=>!(client&&o.client===client));
+    const one=o=>'<option value="'+esc(norm(o.po))+'"'+(sel===norm(o.po)?' selected':'')+'>'+esc(o.po)+(o.client?' · '+esc(o.client):'')+' · pending '+inr(o.pending)+'</option>';
+    return '<option value="">Not matched</option>'+(first.length?'<optgroup label="'+esc(client)+'">'+first.map(one).join('')+'</optgroup>':'')+'<optgroup label="Other PIs">'+rest.map(one).join('')+'</optgroup>';
+  };
+  const matched=r=>!!(r.po||r.client);
+  const nUn=STMT.rows.filter(r=>!matched(r)&&!r.dup).length;
+  const vis=STMT.rows.map((r,i)=>({r:r,i:i})).filter(x=>STMT.all||matched(x.r)||x.r.dup);
+  const body=vis.map(x=>{const r=x.r,i=x.i,sel=r.po?opts.find(o=>norm(o.po)===r.po):null;
+    const over=sel&&r.amt>sel.pending+1?'<span class="chip warn">Above pending '+inr(sel.pending)+'</span>':'';
+    return '<tr><td><input type="checkbox" data-sr="'+i+'" '+(r.on?'checked':'')+(r.dup?' disabled':'')+' aria-label="Add this payment"></td><td>'+fd(r.date)+'</td><td class="wrapc">'+esc(r.narr||'—')+'</td><td class="n">'+inr(r.amt)+'</td><td>'+(r.dup?'<span class="chip n0">Already added</span>':'<select data-ss="'+i+'">'+optHtml(r.po,r.client)+'</select>'+(r.how?'<span class="dim">'+esc(r.how)+'</span>':'')+over)+'</td></tr>';}).join('');
+  const sum=vis.filter(x=>x.r.on).reduce((a,x)=>a+x.r.amt,0);
+  fh.innerHTML='<div class="form" id="stmtbox"><h3>Bank statement · '+esc(STMT.name)+'</h3><p class="muted">'+STMT.rows.length+' credit(s) found'+(STMT.all?'':'; showing the '+(STMT.rows.length-nUn)+' that match a client or PI')+'. Payments with a PI number or an exact advance amount are ticked. For the others pick the PI and tick them. Each ticked payment is added as an Advance received entry.</p>'+
+   (nUn?'<label class="fi"><input type="checkbox" id="stmtall"'+(STMT.all?' checked':'')+'> Show the '+nUn+' credits that match no client</label>':'')+
+   (vis.length?'<div class="tw"><table class="tight"><thead><tr><th></th><th>Date</th><th>Narration</th><th class="r">Credit</th><th>Against PI</th></tr></thead><tbody>'+body+'</tbody></table></div>':'<p>No credit entries found in this file.</p>')+
+   '<div class="fa"><button class="btn primary" data-act="stmtapply">Add selected</button><button class="btn" data-act="stmtcancel">Close</button><span class="muted">'+vis.filter(x=>x.r.on).length+' ticked · '+inr(sum)+'</span></div></div>';
 }
 async function loadStatement(file){
   try{
@@ -1414,12 +1448,12 @@ async function loadStatement(file){
 }
 async function applyStatement(){
   if(!STMT)return;
-  const rows=STMT.rows,sel=[...document.querySelectorAll('#stmtbox [data-ss]')],chk=[...document.querySelectorAll('#stmtbox [data-sr]')];
+  const rows=STMT.rows;
   const seen=stmtSeen();let added=0,skipped=0;
   for(let i=0;i<rows.length;i++){
-    const r=rows[i];const cb=chk.find(x=>+x.dataset.sr===i),sl=sel.find(x=>+x.dataset.ss===i);
-    if(!cb||!cb.checked||r.dup)continue;
-    const po=sl?sl.value:r.po;if(!po){skipped++;continue;}
+    const r=rows[i];
+    if(!r.on||r.dup)continue;
+    const po=r.po;if(!po){skipped++;continue;}
     const o=poOptions().find(x=>norm(x.po)===po);if(!o){skipped++;continue;}
     /* spread the payment over the PI's product lines: oldest pending first, any excess on the last line */
     let left=r.amt;const gs=o.groups.slice();
@@ -1436,7 +1470,14 @@ async function applyStatement(){
   renderStmt();
   toast(added?added+' payment(s) added to Advance'+(skipped?'; '+skipped+' skipped (no PI chosen)':''):(skipped?'Pick a PI for the ticked payments first':'Nothing ticked'));
 }
-document.addEventListener('change',e=>{const t=e.target;if(t&&t.id==='stmtFile'&&t.files&&t.files[0]){loadStatement(t.files[0]);t.value='';}});
+document.addEventListener('change',e=>{
+  const t=e.target;if(!t)return;
+  if(t.id==='stmtFile'&&t.files&&t.files[0]){loadStatement(t.files[0]);t.value='';return;}
+  if(!STMT||!t.closest||!t.closest('#stmtbox'))return;
+  if(t.id==='stmtall'){STMT.all=t.checked;renderStmt();return;}
+  if(t.dataset&&t.dataset.sr!=null){STMT.rows[+t.dataset.sr].on=t.checked;renderStmt();}
+  else if(t.dataset&&t.dataset.ss!=null){const r=STMT.rows[+t.dataset.ss];r.po=t.value;r.how=t.value?'Chosen by you':'';if(t.value)r.on=true;renderStmt();}
+});
 
 /* ---------- Cloud: Supabase Auth + shared data (same project as the PI Desk) ---------- */
 const CLOUD=true, SB_SESS_KEY='orderdesk:sb', CLOUD_POLL=20000;
