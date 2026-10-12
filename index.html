@@ -932,7 +932,8 @@ function chainHTML(r){
   const clients=[...d.clients.values()].sort(byName);
   return sel('f_client','Client *',[{v:'',t:'Select client'}].concat(clients.map(c=>({v:c.id,t:c.name+(c.brand?' · '+c.brand:'')}))),p?p.clientId:'')+
     sel('f_product','Product *',[{v:'',t:'Select product'}],'')+
-    '<div class="f"><label for="f_po">PO number *</label><input id="f_po" list="pos" autocomplete="off" value="'+esc(r&&r.po)+'"><datalist id="pos"></datalist></div>';
+    '<div class="f"><label for="f_pos">PI / PO number *</label><select id="f_pos"><option value="">Select PI / PO number</option></select></div>'+
+    '<div class="f" id="f_po_wrap" hidden><label for="f_po">New PI / PO number *</label><input id="f_po" autocomplete="off" value="'+esc(r&&r.po)+'"></div>';
 }
 const FORMS={
   clients:r=>{r=r||{};return wrapForm(r.id?'Edit client':'New client',
@@ -987,7 +988,7 @@ const num=id=>{const v=parseFloat(val(id));return isNaN(v)?0:v;};
 const pv=(l,v)=>'<div class="pv"><span class="l">'+l+'</span><span class="v">'+esc(v)+'</span></div>';
 
 function chain(row){
-  const cs=$('#f_client'),ps=$('#f_product'),dlist=$('#pos'),d=D[S.co];
+  const cs=$('#f_client'),ps=$('#f_product'),d=D[S.co];
   const clients=[...d.clients.values()];
   if(!cs.value&&clients.length===1)cs.value=clients[0].id;
   function fillProducts(sel){
@@ -995,13 +996,25 @@ function chain(row){
     ps.innerHTML='<option value="">Select product</option>'+list.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
     if(sel&&list.some(p=>p.id===sel))ps.value=sel;else if(list.length===1)ps.value=list[0].id;
   }
-  function fillPOs(){
-    const pid=ps.value;
-    dlist.innerHTML=R.groups.filter(g=>g.pid===pid).map(g=>'<option value="'+esc(g.po)+'"></option>').join('');
+  const pos=$('#f_pos'),po=$('#f_po'),wrap=$('#f_po_wrap');
+  function showOther(on){wrap.hidden=!on;}
+  function fillPOs(keep){
+    const pid=ps.value,cur=keep!=null?keep:(po.value||'');
+    const seen=new Set(),list=R.groups.filter(g=>pid?g.pid===pid:(cs.value&&d.products.get(g.pid)&&d.products.get(g.pid).clientId===cs.value)).filter(g=>{const k=norm(g.po);if(!g.po||seen.has(k))return false;seen.add(k);return true;}).sort((x,y)=>String(x.po).localeCompare(String(y.po)));
+    pos.innerHTML='<option value="">Select PI / PO number</option>'+list.map(g=>'<option value="'+esc(g.po)+'">'+esc(g.po)+(g.poQty?' · qty '+qty(g.poQty):'')+'</option>').join('')+'<option value="__other__">Other — type a new number…</option>';
+    const hit=list.find(g=>norm(g.po)===norm(cur));
+    if(hit){pos.value=hit.po;po.value=hit.po;showOther(false);}
+    else if(cur){pos.value='__other__';po.value=cur;showOther(true);}
+    else{pos.value='';po.value='';showOther(false);}
   }
-  cs.addEventListener('change',()=>{fillProducts();fillPOs();});
-  ps.addEventListener('change',fillPOs);
-  fillProducts(row&&row.productId);fillPOs();
+  pos.addEventListener('change',()=>{
+    if(pos.value==='__other__'){po.value='';showOther(true);po.focus();}
+    else{showOther(false);po.value=pos.value;}
+    po.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  cs.addEventListener('change',()=>{fillProducts();fillPOs('');});
+  ps.addEventListener('change',()=>fillPOs(''));
+  fillProducts(row&&row.productId);fillPOs(row&&row.po);
 }
 function findGroup(res,po,pid){return res.groups.find(g=>g.k===gkey(po,pid));}
 function sim(sec,row){return calc(dataFor(S.co,{sec:sec,row:row}));}
