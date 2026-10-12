@@ -541,7 +541,7 @@ function blocks(){
           {h:'Status',t:r=>r.required<=0?'No advance set':(r.pending<=TOL?(r.excess>TOL?'Excess':'Complete'):'Pending'),r:chipAdv}],
         empty:['No advance recorded','Once you log advance received, each PO shows what is required, received and still pending here.']},
       {id:'adv-stmt',name:'advance received against PI',title:'Advance received against PI',edit:'advances',search:1,rows:R.advRows.filter(r=>(+r.received||0)>0.004).sort((a,b)=>String(b.date).localeCompare(String(a.date))),
-        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,cls:'mono'},
+        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,cls:'mono'},{h:'PI date',t:r=>(r.g&&r.g.piDate)||'',fmt:fd},
           {h:'Advance requested',t:r=>r.req,cls:'n',fmt:inr,s:1},{h:'Advance received',t:r=>+r.received||0,cls:'n',fmt:inr,s:1},
           {h:'UTR details',t:r=>r.utr||(String(r.note||'').match(/\(ref ([^)]+)\)/)||[])[1]||'',cls:'mono wrapc'},
           {h:'Pending advance',t:r=>r.pendPct==null?'':r.pendPct,
