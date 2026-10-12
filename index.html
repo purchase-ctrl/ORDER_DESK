@@ -437,36 +437,121 @@ tbody tr:hover td{background:var(--head)}
 }
 
 /* ---------- dashboard ---------- */
-:root{--d1:#038f7e;--d2:#5a58d0;--d3:#c27000;--d4:#d92d20}
+:root{--d1:#038f7e;--d2:#5a58d0;--d3:#c27000;--d4:#d92d20;--h1:#2dd4bf;--h2:#a9a8ff;--h3:#fbbf24}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--d1:#22a090;--d2:#7b79e0;--d3:#c47a10;--d4:#f97066}}
+:root[data-theme="dark"]{--d1:#22a090;--d2:#7b79e0;--d3:#c47a10;--d4:#f97066}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.dash{display:grid;gap:18px}
+/* hero */
+.dhero{position:relative;overflow:hidden;border-radius:24px;padding:26px 30px;color:#fff;background:radial-gradient(900px 340px at 100% -20%,rgba(45,212,191,.28),transparent 60%),radial-gradient(700px 300px at -10% 120%,rgba(169,168,255,.25),transparent 60%),linear-gradient(135deg,#101a36,#1b2b5a);-webkit-print-color-adjust:exact;print-color-adjust:exact;box-shadow:0 18px 40px -22px rgba(16,26,54,.7)}
+.dhero-top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:26px}
+.dhero .eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.65)}
+.dpick{display:flex;flex-wrap:nowrap;gap:10px;align-items:center}
+.dhero select,.dhero .btn{min-height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;font:inherit;font-weight:600;padding:0 14px;cursor:pointer}
+.dhero select{max-width:300px;min-width:200px;padding-right:8px}.dhero .btn{white-space:nowrap}
+.dhero select option{color:#111;background:#fff}
+.dhero select:hover,.dhero .btn:hover{background:rgba(255,255,255,.2)}
+.dhero select:focus-visible,.dhero .btn:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.dhero-body{display:grid;grid-template-columns:auto minmax(0,1fr);gap:34px;align-items:center}
+.dwho{display:flex;gap:16px;align-items:center;min-width:0}
+.dav{flex:none;width:58px;height:58px;border-radius:18px;display:grid;place-items:center;font-weight:800;font-size:20px;background:linear-gradient(135deg,var(--h1),var(--h2));color:#0d1633}
+.dwho h2{margin:0;font-size:clamp(24px,3vw,34px);line-height:1.1;letter-spacing:-.02em;color:#fff;overflow-wrap:anywhere}
+.dmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.dmeta span{font-size:12.5px;padding:4px 10px;border-radius:99px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.88)}
+.dring{display:flex;align-items:center;gap:26px;justify-content:flex-end;flex-wrap:wrap}
+.dhstats{display:grid;grid-template-columns:repeat(3,minmax(0,auto));gap:10px 28px}
+.dhstats div{min-width:0}
+.dhstats b{display:block;font-size:clamp(18px,2vw,24px);letter-spacing:-.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dhstats span{display:flex;align-items:center;gap:6px;font-size:12.5px;color:rgba(255,255,255,.7)}
+.dhstats i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.dhstats .a i{background:var(--h1)}.dhstats .b i{background:var(--h2)}.dhstats .c i{background:rgba(255,255,255,.3)}
+/* donut */
+.donut{position:relative;flex:none;width:var(--sz,150px);height:var(--sz,150px)}
+.donut svg{width:100%;height:100%;display:block}
+.dn-track{stroke:var(--neutral-bg)}
+.dhero .dn-track{stroke:rgba(255,255,255,.16)}
+.dn-seg{transition:stroke-width .15s}
+.dn-seg:hover,.dn-seg:focus-visible{stroke-width:6.2;outline:none}
+.dn-seg.s1{stroke:var(--d1)}.dn-seg.s2{stroke:var(--d2)}.dn-seg.s3{stroke:var(--d3)}.dn-seg.s4{stroke:var(--d4)}.dn-seg.h1{stroke:var(--h1)}.dn-seg.h2{stroke:var(--h2)}.dn-seg.hl{stroke:rgba(255,255,255,.16)}
+.dc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none}
+.dc b{font-size:calc(var(--sz,150px)*.2);line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.dc span{font-size:12px;margin-top:3px;opacity:.75}
+/* kpi tiles */
+.dtiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.dt{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px 18px;display:flex;gap:14px;align-items:center;box-shadow:var(--shadow)}
+.dt .ic{flex:none;width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--neutral-bg);color:var(--ink)}
+.dt .ic svg{width:22px;height:22px}
+.dt.t-bad .ic{background:color-mix(in srgb,var(--d4) 14%,transparent);color:var(--d4)}
+.dt.t-warn .ic{background:color-mix(in srgb,var(--d3) 15%,transparent);color:var(--d3)}
+.dt.t-ok .ic{background:color-mix(in srgb,var(--d1) 14%,transparent);color:var(--d1)}
+.dt.t-ind .ic{background:color-mix(in srgb,var(--d2) 14%,transparent);color:var(--d2)}
+.dt .l{font-size:12.5px;color:var(--muted);font-weight:600}
+.dt .v{font-size:clamp(18px,1.9vw,23px);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin:1px 0}
+.dt .s{font-size:12.5px;color:var(--muted)}
+/* cards */
+.dcard{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:20px 22px;box-shadow:var(--shadow);min-width:0}
+.dcard>.dh{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;margin-bottom:4px}
+.dcard h3{margin:0;font-size:17px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.dcard h3 .cnt{font-size:12px}
+.dsub{margin:2px 0 14px;font-size:13.5px;color:var(--muted)}
 .dgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
-.dgrid .dchart:first-child{grid-column:1/-1}
-.dk{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:6px}
-.dcl{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 16px}
-.dsub{margin:-2px 0 10px;font-size:13px}
-.cwrap{max-height:520px;overflow:auto;padding-right:6px}
-.crow{display:grid;grid-template-columns:minmax(130px,26%) minmax(0,1fr) minmax(130px,auto);align-items:center;gap:6px 14px;padding:8px 0;border-bottom:1px solid var(--line)}
-.crow:last-child{border-bottom:0}
-.clab{display:flex;flex-direction:column;min-width:0;font-size:13px;font-weight:600}
+.dgrid>.dcard.wide{grid-column:1/-1}
+.dsum{display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding:6px 0 16px}
+.dsum .facts{display:grid;gap:10px;min-width:0;flex:1 1 180px}
+.fact{display:flex;align-items:center;gap:10px;font-size:14px}
+.fact i{width:12px;height:12px;border-radius:4px;flex:none}
+.fact i.s1{background:var(--d1)}.fact i.s2{background:var(--d2)}.fact i.s3{background:var(--d3)}.fact i.s4{background:var(--d4)}.fact i.s0{background:var(--neutral-bg);border:1px solid var(--line)}
+.fact b{margin-left:auto;font-variant-numeric:tabular-nums}
+.fact span{color:var(--muted)}
+.sumline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.sumline div{background:var(--neutral-bg);border-radius:14px;padding:10px 14px}
+.sumline span{display:block;font-size:12.5px;color:var(--muted);font-weight:600}
+.sumline b{font-size:clamp(15px,1.6vw,19px);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.cwrap{max-height:460px;overflow:auto;padding-right:6px;margin-right:-6px}
+.crow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:end;padding:11px 0;border-top:1px solid var(--line)}
+.crow:first-child{border-top:0}
+.clab{display:flex;flex-direction:column;min-width:0;font-size:14px;font-weight:700}
 .clab .lnk{align-self:flex-start;padding:2px 6px;margin:-2px -6px}
-.sub2{display:block;font-size:12px;font-weight:400;color:var(--muted);font-family:var(--font);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sub2.bad{color:var(--bad);font-weight:600}
-.ctrack{display:flex;gap:2px;height:14px;background:var(--neutral-bg);border-radius:7px;overflow:hidden}
-.cseg{display:block;height:100%;border-radius:0 4px 4px 0;min-width:3px;outline-offset:-2px}
+.sub2{display:block;font-size:12.5px;font-weight:400;color:var(--muted);font-family:var(--font);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub2.bad{color:var(--bad);font-weight:700}
+.cval{text-align:right;font-size:14px;font-variant-numeric:tabular-nums;display:flex;flex-direction:column}
+.cval strong{font-size:15px}
+.ctrack{grid-column:1/-1;display:flex;gap:3px;height:12px;background:var(--neutral-bg);border-radius:99px;overflow:hidden}
+.cseg{display:block;height:100%;border-radius:99px;min-width:4px;outline-offset:-2px;transition:filter .15s}
 .cseg.s1,.sw.s1{background:var(--d1)}.cseg.s2,.sw.s2{background:var(--d2)}.cseg.s3,.sw.s3{background:var(--d3)}.cseg.s4,.sw.s4{background:var(--d4)}.sw.s0{background:var(--neutral-bg);border:1px solid var(--line)}
 .cseg:hover,.cseg:focus-visible{filter:brightness(1.12);outline:2px solid var(--ink)}
-.cval{text-align:right;font-size:13px;font-family:var(--mono);font-variant-numeric:tabular-nums}
-.cval .sub2{font-family:var(--font)}
+.pctchip{display:inline-block;font-size:11.5px;font-weight:800;padding:2px 8px;border-radius:99px;margin-left:6px;background:var(--neutral-bg);color:var(--ink)}
+.pctchip.ok{background:color-mix(in srgb,var(--d1) 16%,transparent);color:var(--d1)}
+.pctchip.bad{background:color-mix(in srgb,var(--d4) 14%,transparent);color:var(--d4)}
 .clegend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 8px;font-size:12.5px;color:var(--muted)}
 .clegend span{display:inline-flex;align-items:center;gap:6px}
-.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw{width:12px;height:12px;border-radius:4px;display:inline-block}
+/* product + client cards */
+.dcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.pcard{border:1px solid var(--line);border-radius:18px;padding:14px 16px;background:var(--bg);display:flex;flex-direction:column;gap:8px;min-width:0}
+.pcard .pn{font-weight:800;font-size:15px;overflow-wrap:anywhere}
+.pcard .pc{font-size:12.5px;color:var(--muted)}
+.pcard .pcost{font-size:22px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.pcard .pcost small{font-size:12px;font-weight:600;color:var(--muted);margin-left:4px;letter-spacing:0}
+.pchips{display:flex;flex-wrap:wrap;gap:6px}
+.pchips span{font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--surface);border:1px solid var(--line)}
+.pfoot{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--muted);border-top:1px dashed var(--line);padding-top:10px;margin-top:2px}.pfoot span{display:flex;flex-direction:column;gap:1px;min-width:0}.pfoot span:last-child{margin-left:auto;text-align:right}.pfoot b{font-size:13.5px}
+.pfoot b{color:var(--ink);font-variant-numeric:tabular-nums}
+.ccard{text-align:left;font:inherit;color:inherit;cursor:pointer;border:1px solid var(--line);border-radius:18px;padding:14px 16px;background:var(--bg);display:flex;flex-direction:column;gap:10px;min-width:0;transition:transform .15s,box-shadow .15s,border-color .15s}
+.ccard:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:var(--d2)}
+.ccard:focus-visible{outline:3px solid var(--d2);outline-offset:2px}
+.ccard .cn{display:flex;align-items:center;gap:10px;font-weight:800;font-size:15px}
+.ccard .cn .dav{width:34px;height:34px;border-radius:11px;font-size:13px}
+.ccard .cn span{overflow-wrap:anywhere}
+.ccard .go{margin-left:auto;color:var(--muted)}
+.ccard .row2{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--muted)}
+.ccard .row2 b{color:var(--ink);font-variant-numeric:tabular-nums}
 .dtip{position:fixed;z-index:100001;pointer-events:none;background:var(--ink);color:var(--surface);font-size:12.5px;font-weight:600;padding:7px 11px;border-radius:9px;box-shadow:var(--shadow-lg);max-width:320px}
 .dtip[hidden]{display:none}
-#dash_client{min-height:42px;max-width:300px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:inherit}
-@media (max-width:1100px){.dk{grid-template-columns:repeat(2,minmax(0,1fr))}.dgrid{grid-template-columns:minmax(0,1fr)}}
-@media (max-width:640px){.crow{grid-template-columns:minmax(0,1fr)}.cval{text-align:left}#dash_client{max-width:none;flex:1 1 100%}}
-@media print{.side,#banner,.toast,.pt,.bt,.skip{display:none!important}.content{padding:0;max-width:none}.cwrap{max-height:none;overflow:visible}.wrap{display:block}body{background:#fff!important}.block,.dchart{break-inside:avoid}}
+@media (prefers-reduced-motion:reduce){.ccard,.dn-seg,.cseg{transition:none}.ccard:hover{transform:none}}
+@media (max-width:1100px){.dtiles{grid-template-columns:repeat(2,minmax(0,1fr))}.dgrid{grid-template-columns:minmax(0,1fr)}.dhero-body{grid-template-columns:minmax(0,1fr)}.dring{justify-content:flex-start}}
+@media (max-width:640px){.dpick{flex-wrap:wrap}.dhero{padding:20px 18px;border-radius:20px}.dtiles{gap:10px}.dt{padding:12px;gap:10px;flex-direction:column;align-items:flex-start}.dhstats{grid-template-columns:repeat(2,minmax(0,auto))}.sumline{grid-template-columns:1fr}.dcard{padding:16px 16px}.dhero select{max-width:none;flex:1 1 100%}}
+@media print{.side,#banner,.toast,.pt,.bt,.skip,.dpick{display:none!important}.content{padding:0;max-width:none}.cwrap{max-height:none;overflow:visible}.wrap{display:block}body{background:#fff!important}.dcard,.dt,.dhero{break-inside:avoid}}
 </style>
 <title>Order &amp; Payment Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -979,7 +1064,8 @@ const FORMS={
   products:r=>{r=r||{};const clients=[...D[S.co].clients.values()].sort(byName);
     return wrapForm(r.id?'Edit product':'New product',
       sel('p_client','Client *',[{v:'',t:'Select client'}].concat(clients.map(c=>({v:c.id,t:c.name}))),r.clientId||(clients.length===1?clients[0].id:''))+
-      fld('p_name','Product name *','text',r.name,'autocomplete="off"')+
+      '<div class="f"><label for="p_name_sel">Product name *</label><select id="p_name_sel"><option value="">Select product name</option></select></div>'+
+      '<div class="f" id="p_name_wrap" hidden><label for="p_name">New product name *</label><input id="p_name" type="text" autocomplete="off" value="'+esc(r.name)+'"></div>'+
       fld('p_cost','Final cost per unit (₹) *','number',r.cost==null?'':r.cost,NUM)+
       fld('p_adv','Advance (% of final cost) *','number',advPctOf(r)==null?'':Math.round(advPctOf(r)*100)/100,NUM,1)+
       fld('p_terms','Payment terms (days)','number',r.terms==null?30:r.terms,'inputmode="numeric" step="1" min="0"'));},
@@ -1113,6 +1199,18 @@ function bindForm(t,row){
     p();
   }
   if(t==='products'){
+    const all=new Map();COS.forEach(c=>D[c.key].products.forEach(x=>{const k=norm(x.name);if(k&&!all.has(k))all.set(k,x);}));
+    const names=[...all.values()].map(x=>x.name).sort((x,y)=>String(x).localeCompare(String(y)));
+    const ps=$('#p_name_sel'),pn=$('#p_name'),pw=$('#p_name_wrap');
+    ps.innerHTML='<option value="">Select product name</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('')+'<option value="__other__">Other — type a new name…</option>';
+    const cur=pn.value,hit=names.find(n=>norm(n)===norm(cur));
+    if(hit){ps.value=hit;pw.hidden=true;}else if(cur){ps.value='__other__';pw.hidden=false;}
+    ps.addEventListener('change',()=>{
+      if(ps.value==='__other__'){pn.value='';pw.hidden=false;pn.focus();return;}
+      pw.hidden=true;pn.value=ps.value;
+      const ex=all.get(norm(ps.value));
+      if(ex&&!S.form.id){if(!val('p_cost')&&ex.cost!=null)$('#p_cost').value=ex.cost;if(!val('p_adv')&&advPctOf(ex)!=null)$('#p_adv').value=Math.round(advPctOf(ex)*100)/100;if(ex.terms!=null)$('#p_terms').value=ex.terms;$('#p_cost').dispatchEvent(new Event('input',{bubbles:true}));}
+    });
     const u=()=>{const c=num('p_cost'),a=num('p_adv'),h=$('#p_adv_h');if(h)h.textContent=c>0?'= '+inr(c*a/100)+' per unit':'';};
     f.addEventListener('input',u);u();
   }
@@ -1731,54 +1829,76 @@ function dashData(cid){
     toShip:pos.filter(o=>o.invQty>0&&o.qty>0).reduce((a,o)=>a+Math.max(0,o.qty-o.disp),0)};
 }
 const dTip=t=>' data-tip="'+esc(t)+'" tabindex="0"';
+const pc0=(a,b)=>b>0?Math.round(Math.min(1,a/b)*100):0;
 function dRow(label,segs,scale,right,trackTip){
   const sg=segs.filter(x=>x.v>0).map(x=>'<i class="cseg '+x.cls+'" style="width:'+Math.min(100,x.v/scale*100).toFixed(2)+'%"'+dTip(x.tip)+' role="img" aria-label="'+esc(x.tip)+'"></i>').join('');
-  return '<div class="crow"><div class="clab">'+label+'</div><div class="ctrack"'+(trackTip?' title="'+esc(trackTip)+'"':'')+'>'+sg+'</div><div class="cval">'+right+'</div></div>';
+  return '<div class="crow"><div class="clab">'+label+'</div><div class="cval">'+right+'</div><div class="ctrack"'+(trackTip?' title="'+esc(trackTip)+'"':'')+'>'+sg+'</div></div>';
 }
 function dLegend(items){return '<div class="clegend">'+items.map(x=>'<span><i class="sw '+x.cls+'"></i>'+esc(x.t)+'</span>').join('')+'</div>';}
-function dChart(id,title,sub,legend,rowsHTML,tableHTML,empty){
-  const tb=!!S.dashTbl[id];
-  return '<section class="block dchart"><div class="bh"><h3>'+esc(title)+'</h3><div class="bt"><button type="button" class="btn sm" data-act="dtbl" data-id="'+id+'" aria-pressed="'+tb+'">'+(tb?'Show graph':'Show table')+'</button></div></div>'+
-    '<p class="muted dsub">'+esc(sub)+'</p>'+(rowsHTML?(tb?tableHTML:dLegend(legend)+'<div class="cwrap">'+rowsHTML+'</div>'):'<div class="empty"><h3>'+esc(empty[0])+'</h3><p class="muted">'+esc(empty[1])+'</p></div>')+'</section>';
+function donut(segs,big,small,sz,label){
+  const on=segs.filter(s=>s.v>0),tot=on.reduce((a,s)=>a+s.v,0);
+  let off=0;const gap=on.length>1?1:0;
+  const arcs=on.map(s=>{const l=s.v/tot*100,len=Math.max(.2,l-gap);const a='<circle class="dn-seg '+s.cls+'" cx="21" cy="21" r="15.9155" fill="none" stroke-width="5" stroke-dasharray="'+len.toFixed(2)+' '+(100-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'"'+dTip(s.tip)+'/>';off+=l;return a;}).join('');
+  return '<div class="donut" style="--sz:'+(sz||150)+'px" role="img" aria-label="'+esc(label||'')+'"><svg viewBox="0 0 42 42" aria-hidden="true" focusable="false"><g transform="rotate(-90 21 21)"><circle class="dn-track" cx="21" cy="21" r="15.9155" fill="none" stroke-width="5"/>'+arcs+'</g></svg><div class="dc"><b>'+esc(big)+'</b><span>'+esc(small)+'</span></div></div>';
 }
+function dChart(id,title,sub,legend,rowsHTML,tableHTML,empty,summary,wide){
+  const tb=!!S.dashTbl[id];
+  return '<section class="dcard'+(wide?' wide':'')+'"><div class="dh"><h3>'+esc(title)+'</h3><div class="bt"><button type="button" class="btn sm" data-act="dtbl" data-id="'+id+'" aria-pressed="'+tb+'">'+(tb?'Show graph':'Show table')+'</button></div></div>'+
+    '<p class="dsub">'+esc(sub)+'</p>'+(rowsHTML?((summary||'')+(tb?tableHTML:dLegend(legend)+'<div class="cwrap">'+rowsHTML+'</div>')):'<div class="empty"><h3>'+esc(empty[0])+'</h3><p class="muted">'+esc(empty[1])+'</p></div>')+'</section>';
+}
+const DI={
+  money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12M6 9h12M6 4c6 0 8 2 8 5s-2 5-8 5l7 6"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17.5v.5"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h12v10H2zM14 9h4l4 4v3h-8"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+  go:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'
+};
+const ini=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
 function renderDash(){
   const host=$('#dashHost');if(!host)return;
   const cid=S.dashClient&&D[S.co].clients.has(S.dashClient)?S.dashClient:'';S.dashClient=cid;
   const X=dashData(cid),c=cid?D[S.co].clients.get(cid):null,coName=COS.find(x=>x.key===S.co).name;
-  const kp=(l,v,sb)=>'<div class="kpi"><div class="l">'+l+'</div><div class="v">'+esc(v)+'</div><div class="s">'+esc(sb)+'</div></div>';
-  let h='<div class="ph"><div><h2>Dashboard</h2><p class="muted">'+(c?esc(c.name):'All clients')+' · '+esc(coName)+'. Products, payments against each PI / PO, dispatch and dues.</p></div>'+
-    '<div class="pt"><label class="sr" for="dash_client">Client</label><select id="dash_client" aria-label="Choose client"><option value="">All clients</option>'+X.clients.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===cid?' selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select>'+
-    '<button type="button" class="btn" data-act="dprint">Print / Save PDF</button></div></div>';
-  if(!X.clients.length)return host.innerHTML=h+'<div class="empty"><h3>No clients yet</h3><p class="muted">Add a client in Client / Brand. Its products, payments and dispatch then show up here.</p></div>';
-  if(c){const bits=[c.brand&&('Brand: '+c.brand),c.gstin&&('GSTIN '+c.gstin),c.contact,c.phone,c.email,c.city].filter(Boolean);
-    h+='<div class="dcl"><strong>'+esc(c.name)+'</strong><span class="muted">'+(bits.length?bits.map(esc).join(' · '):'No contact details saved')+'</span></div>';}
-  h+='<section class="kpis dk" aria-label="Summary">'+kp('Order value',inr(X.value),X.pos.length+(X.pos.length===1?' PI / PO':' PIs / POs'))+kp('Payments received',inr(X.received),'advance + invoice payments')+
-    kp('Outstanding on invoices',inr(X.outstanding),X.open.length+' open invoice'+(X.open.length===1?'':'s'))+kp('Overdue',inr(X.overdue),X.open.filter(X.isDue).length+' invoice'+(X.open.filter(X.isDue).length===1?'':'s')+' past due date')+
-    kp('Yet to dispatch',qty(X.toShip)+' units','on invoiced POs')+'</section>';
+  const picker='<div class="dpick"><label class="sr" for="dash_client">Client</label><select id="dash_client" aria-label="Choose client"><option value="">All clients</option>'+X.clients.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===cid?' selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select><button type="button" class="btn" data-act="dprint">Print / Save PDF</button></div>';
+  if(!X.clients.length)return host.innerHTML='<div class="dash"><section class="dhero"><div class="dhero-top"><span class="eyebrow">Dashboard · '+esc(coName)+'</span></div><div class="dwho"><div><h2>No clients yet</h2><div class="dmeta"><span>Add a client in Client / Brand. Its products, payments and dispatch then show up here.</span></div></div></div></section></div>';
+  const advT=X.pos.reduce((a,o)=>a+o.adv,0),invT=X.pos.reduce((a,o)=>a+o.invPaid,0),left=Math.max(0,X.value-advT-invT);
+  const col=pc0(X.received,X.value);
+  const bits=c?[c.brand&&('Brand: '+c.brand),c.gstin&&('GSTIN '+c.gstin),c.contact,c.phone,c.email,c.city].filter(Boolean):[X.clients.length+' clients',X.prods.length+' products',X.pos.length+(X.pos.length===1?' PI / PO':' PIs / POs')];
+  let h='<div class="dash"><section class="dhero" aria-label="Overview"><div class="dhero-top"><span class="eyebrow">Dashboard · '+esc(coName)+'</span>'+picker+'</div><div class="dhero-body">'+
+    '<div class="dwho"><div class="dav" aria-hidden="true">'+(c?esc(ini(c.name)):'All')+'</div><div style="min-width:0"><h2>'+(c?esc(c.name):'All clients')+'</h2><div class="dmeta">'+bits.map(b=>'<span>'+esc(b)+'</span>').join('')+(c&&!bits.length?'<span>No contact details saved</span>':'')+'</div></div></div>'+
+    '<div class="dring">'+donut([{v:advT,cls:'h1',tip:'Advance received '+inr(advT)},{v:invT,cls:'h2',tip:'Invoice payments '+inr(invT)},{v:left,cls:'hl',tip:'Still to receive '+inr(left)}],col+'%','collected',150,'Collected '+col+' percent of order value '+inr(X.value))+
+    '<div class="dhstats"><div><b>'+inr(X.value)+'</b><span>Order value</span></div><div class="a"><b>'+inr(advT)+'</b><span><i></i>Advance received</span></div><div class="b"><b>'+inr(invT)+'</b><span><i></i>Invoice payments</span></div><div class="c"><b>'+inr(left)+'</b><span><i></i>Still to receive</span></div></div></div></div></section>';
+  const nOpen=X.open.length,nOver=X.open.filter(X.isDue).length;
+  const tile=(cls,ic,l,v,s)=>'<div class="dt '+cls+'"><div class="ic" aria-hidden="true">'+DI[ic]+'</div><div><div class="l">'+l+'</div><div class="v">'+esc(v)+'</div><div class="s">'+esc(s)+'</div></div></div>';
+  h+='<section class="dtiles" aria-label="Summary">'+tile('t-ok','money','Payments received',inr(X.received),col+'% of order value')+tile('t-warn','clock','Outstanding on invoices',inr(X.outstanding),nOpen+' open invoice'+(nOpen===1?'':'s'))+
+    tile(X.overdue>TOL?'t-bad':'','alert','Overdue',inr(X.overdue),nOver+' invoice'+(nOver===1?'':'s')+' past due date')+tile('t-ind','truck','Yet to dispatch',qty(X.toShip)+' units','on invoiced POs')+'</section>';
   /* clients overview (all clients view) */
   if(!cid){
-    const rows=X.clients.map(k=>{const d=dashData(k.id);return {k:k,d:d};});
-    h+='<section class="block"><div class="bh"><h3>Clients<span class="cnt">'+rows.length+'</span></h3></div><div class="tw"><table class="tight"><thead><tr><th>Client</th><th class="r">Products</th><th class="r">PIs / POs</th><th class="r">Order value</th><th class="r">Received</th><th class="r">Outstanding</th><th class="r">Overdue</th><th class="r">Yet to dispatch</th></tr></thead><tbody>'+
-      rows.map(r=>'<tr><td><button type="button" class="lnk" data-act="dclient" data-id="'+esc(r.k.id)+'">'+esc(r.k.name)+'</button></td><td class="n">'+r.d.prods.length+'</td><td class="n">'+r.d.pos.length+'</td><td class="n">'+inr(r.d.value)+'</td><td class="n">'+inr(r.d.received)+'</td><td class="n">'+inr(r.d.outstanding)+'</td><td class="n">'+(r.d.overdue>TOL?'<span class="chip bad">'+inr(r.d.overdue)+'</span>':inr(0))+'</td><td class="n">'+qty(r.d.toShip)+'</td></tr>').join('')+'</tbody></table></div></section>';
+    const rows=X.clients.map(k=>({k:k,d:dashData(k.id)}));
+    h+='<section class="dcard"><div class="dh"><h3>Clients<span class="cnt">'+rows.length+'</span></h3></div><p class="dsub">Tap a client to see only their products, payments and dispatch.</p><div class="dcards">'+
+      rows.map(r=>{const p=pc0(r.d.received,r.d.value);return '<button type="button" class="ccard" data-act="dclient" data-id="'+esc(r.k.id)+'" aria-label="Open '+esc(r.k.name)+'"><div class="cn"><span class="dav" aria-hidden="true">'+esc(ini(r.k.name))+'</span><span>'+esc(r.k.name)+'</span><i class="go" aria-hidden="true">'+DI.go+'</i></div>'+
+        dRow('<span class="sub2">Collected</span>',[{v:r.d.received,cls:'s1',tip:r.k.name+' · Received '+inr(r.d.received)+' of '+inr(r.d.value)}],Math.max(1,r.d.value,r.d.received),'<strong>'+p+'%</strong>')+
+        '<div class="row2"><span>Order value <b>'+inr(r.d.value)+'</b></span><span>'+(r.d.overdue>TOL?'<span class="pctchip bad">'+inr(r.d.overdue)+' overdue</span>':'Nothing overdue')+'</span></div></button>';}).join('')+'</div></section>';
   }
   /* product list */
-  const pvals=new Map();X.pos.forEach(o=>{});
   const pRows=X.prods.map(p=>{const gs=R.groups.filter(g=>g.pid===p.id);return {p:p,c:D[S.co].clients.get(p.clientId),pos:new Set(gs.map(g=>norm(g.po))).size,qty:gs.reduce((a,g)=>a+(g.poQty||0),0),val:gs.reduce((a,g)=>a+(g.orderValue||0),0)};});
-  h+='<section class="block"><div class="bh"><h3>Product list<span class="cnt">'+pRows.length+'</span></h3></div>'+(pRows.length?'<div class="tw"><table class="tight"><thead><tr>'+(cid?'':'<th>Client</th>')+'<th>Product</th><th class="r">Final cost</th><th class="r">Advance %</th><th class="r">Terms (days)</th><th class="r">PIs / POs</th><th class="r">PO qty</th><th class="r">Order value</th></tr></thead><tbody>'+
-    pRows.map(r=>'<tr>'+(cid?'':'<td>'+esc(r.c?r.c.name:'—')+'</td>')+'<td><strong>'+esc(r.p.name)+'</strong></td><td class="n">'+inr(+r.p.cost||0)+'</td><td class="n">'+(advPctOf(r.p)==null?'—':pct(advPctOf(r.p)))+'</td><td class="n">'+qty(+r.p.terms||0)+'</td><td class="n">'+r.pos+'</td><td class="n">'+qty(r.qty)+'</td><td class="n">'+inr(r.val)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty"><h3>No products</h3><p class="muted">Add products in the Products tab.</p></div>')+'</section>';
+  h+='<section class="dcard"><div class="dh"><h3>Product list<span class="cnt">'+pRows.length+'</span></h3></div><p class="dsub">Final cost, advance and payment terms for each product, with how much has been ordered.</p>'+(pRows.length?'<div class="dcards">'+
+    pRows.map(r=>{const ap=advPctOf(r.p);return '<article class="pcard">'+(cid?'':'<div class="pc">'+esc(r.c?r.c.name:'—')+'</div>')+'<div class="pn">'+esc(r.p.name)+'</div><div class="pcost">'+inr(+r.p.cost||0)+'<small>final cost</small></div>'+
+      '<div class="pchips"><span>Advance '+(ap==null?'—':pct(ap))+'</span><span>Terms '+qty(+r.p.terms||0)+' days</span></div>'+
+      '<div class="pfoot"><span><b>'+r.pos+'</b>PI / PO</span><span><b>'+qty(r.qty)+'</b>units</span><span><b>'+inr(r.val)+'</b>order value</span></div></article>';}).join('')+'</div>':'<div class="empty"><h3>No products</h3><p class="muted">Add products in the Products tab.</p></div>')+'</section>';
   /* chart 1: payments against PI / PO */
   const pp=X.pos.filter(o=>o.value>0||o.adv+o.invPaid>0).sort((a,b)=>(b.adv+b.invPaid)-(a.adv+a.invPaid)||String(a.po).localeCompare(String(b.po)));
-  const sc1=Math.max(1,...pp.map(o=>Math.max(o.value,o.adv+o.invPaid)));
   const lab=o=>polink(o.po)+'<span class="sub2">'+esc((cid?'':o.client.name+' · ')+[...o.products].slice(0,2).join(', ')+(o.products.size>2?' +'+(o.products.size-2):''))+'</span>';
-  const r1=pp.map(o=>dRow(lab(o),[{v:o.adv,cls:'s1',tip:o.po+' · Advance received '+inr(o.adv)},{v:o.invPaid,cls:'s2',tip:o.po+' · Invoice payments '+inr(o.invPaid)}],Math.max(1,o.value,o.adv+o.invPaid),'<strong>'+inr(o.adv+o.invPaid)+'</strong><span class="sub2">of '+inr(o.value)+' order value</span>','Order value '+inr(o.value))).join('');
+  const r1=pp.map(o=>{const rc=o.adv+o.invPaid,p=pc0(rc,o.value);return dRow(lab(o),[{v:o.adv,cls:'s1',tip:o.po+' · Advance received '+inr(o.adv)},{v:o.invPaid,cls:'s2',tip:o.po+' · Invoice payments '+inr(o.invPaid)}],Math.max(1,o.value,rc),'<strong>'+inr(rc)+'<span class="pctchip'+(p>=100?' ok':'')+'">'+p+'%</span></strong><span class="sub2">of '+inr(o.value)+' order value</span>','Order value '+inr(o.value));}).join('');
   const t1='<div class="tw"><table class="tight"><thead><tr><th>PI / PO</th>'+(cid?'':'<th>Client</th>')+'<th class="r">Order value</th><th class="r">Advance received</th><th class="r">Invoice payments</th><th class="r">Total received</th></tr></thead><tbody>'+pp.map(o=>'<tr><td class="mono">'+esc(o.po)+'</td>'+(cid?'':'<td>'+esc(o.client.name)+'</td>')+'<td class="n">'+inr(o.value)+'</td><td class="n">'+inr(o.adv)+'</td><td class="n">'+inr(o.invPaid)+'</td><td class="n">'+inr(o.adv+o.invPaid)+'</td></tr>').join('')+'</tbody></table></div>';
-  h+='<div class="dgrid">'+dChart('pay','Payments against each PI / PO','Each bar is one order. The full track is its order value; the filled part is what has been received so far.',[{cls:'s1',t:'Advance received'},{cls:'s2',t:'Invoice payments'},{cls:'s0',t:'Still to receive (grey)'}],r1,t1,['No payments yet','Orders appear here once a PI / PO has an advance or an invoice.']);
+  const s1='<div class="sumline"><div><span>Order value</span><b>'+inr(X.value)+'</b></div><div><span>Received</span><b>'+inr(X.received)+'</b></div><div><span>Still to receive</span><b>'+inr(left)+'</b></div></div>';
+  h+='<div class="dgrid">'+dChart('pay','Payments against each PI / PO','One bar per order. The full bar is the order value; the colour is what has been received so far.',[{cls:'s1',t:'Advance received'},{cls:'s2',t:'Invoice payments'},{cls:'s0',t:'Still to receive'}],r1,t1,['No payments yet','Orders appear here once a PI / PO has an advance or an invoice.'],s1,true);
   /* chart 2: dispatch vs pending */
   const dd=X.pos.filter(o=>o.invQty>0&&o.qty>0).sort((a,b)=>(b.qty-b.disp)-(a.qty-a.disp));
-  const sc2=Math.max(1,...dd.map(o=>Math.max(o.qty,o.disp)));
-  const r2=dd.map(o=>{const pend=Math.max(0,o.qty-o.disp);return dRow(lab(o),[{v:o.disp,cls:'s1',tip:o.po+' · Dispatched '+qty(o.disp)+' units'},{v:pend,cls:'s3',tip:o.po+' · Pending dispatch '+qty(pend)+' units'}],Math.max(1,o.qty,o.disp),'<strong>'+qty(pend)+'</strong><span class="sub2">pending of '+qty(o.qty)+' units</span>','PO quantity '+qty(o.qty));}).join('');
+  const r2=dd.map(o=>{const pend=Math.max(0,o.qty-o.disp),p=pc0(o.disp,o.qty);return dRow(lab(o),[{v:o.disp,cls:'s1',tip:o.po+' · Dispatched '+qty(o.disp)+' units'},{v:pend,cls:'s3',tip:o.po+' · Pending dispatch '+qty(pend)+' units'}],Math.max(1,o.qty,o.disp),'<strong>'+qty(pend)+' pending<span class="pctchip'+(p>=100?' ok':'')+'">'+p+'% sent</span></strong><span class="sub2">of '+qty(o.qty)+' units</span>','PO quantity '+qty(o.qty));}).join('');
   const t2='<div class="tw"><table class="tight"><thead><tr><th>PI / PO</th>'+(cid?'':'<th>Client</th>')+'<th class="r">PO qty</th><th class="r">Dispatched</th><th class="r">Pending</th></tr></thead><tbody>'+dd.map(o=>'<tr><td class="mono">'+esc(o.po)+'</td>'+(cid?'':'<td>'+esc(o.client.name)+'</td>')+'<td class="n">'+qty(o.qty)+'</td><td class="n">'+qty(o.disp)+'</td><td class="n">'+qty(Math.max(0,o.qty-o.disp))+'</td></tr>').join('')+'</tbody></table></div>';
-  h+=dChart('disp','Dispatched and pending','Each bar is one order. The full track is the PO quantity. Only POs that already have an invoice are shown.',[{cls:'s1',t:'Dispatched'},{cls:'s3',t:'Pending dispatch'}],r2,t2,['Nothing to show','A PO appears here after an invoice is raised against it.']);
+  const totQ=dd.reduce((a,o)=>a+o.qty,0),sent=dd.reduce((a,o)=>a+Math.min(o.disp,o.qty),0),pendQ=Math.max(0,totQ-sent),sp=pc0(sent,totQ);
+  const s2=dd.length?'<div class="dsum">'+donut([{v:sent,cls:'s1',tip:'Dispatched '+qty(sent)+' units'},{v:pendQ,cls:'s3',tip:'Pending dispatch '+qty(pendQ)+' units'}],sp+'%','sent',124,'Dispatched '+sp+' percent of '+qty(totQ)+' units')+'<div class="facts"><div class="fact"><i class="s1"></i><span>Dispatched</span><b>'+qty(sent)+'</b></div><div class="fact"><i class="s3"></i><span>Pending</span><b>'+qty(pendQ)+'</b></div></div></div>':'';
+  h+=dChart('disp','Dispatched and pending','Only POs that already have an invoice are shown.',[{cls:'s1',t:'Dispatched'},{cls:'s3',t:'Pending dispatch'}],r2,t2,['Nothing to show','A PO appears here after an invoice is raised against it.'],s2);
   /* chart 3: due vs not due */
   let r3='',t3='';
   const od=i=>X.isDue(i);
@@ -1790,10 +1910,12 @@ function renderDash(){
   }else{
     const o=X.open.slice().sort((a,b)=>String(a.due||'9').localeCompare(String(b.due||'9')));
     const sc=Math.max(1,...o.map(i=>i.pend));
-    r3=o.map(i=>{const d=od(i),dd=i.due?daysBetween(X.today,i.due):null;return dRow('<strong class="mono">'+esc(i.invNo)+'</strong><span class="sub2">PO '+esc(i.po)+' · due '+fd(i.due)+'</span>',[{v:i.pend,cls:d?'s4':'s2',tip:i.invNo+' · '+(d?'Due (overdue) ':'Not due yet ')+inr(i.pend)}],sc,'<strong>'+inr(i.pend)+'</strong>'+(d?'<span class="sub2 bad">▲ overdue '+(-dd)+' day'+(dd===-1?'':'s')+'</span>':'<span class="sub2">'+(dd==null?'no due date':'due in '+dd+' day'+(dd===1?'':'s'))+'</span>'));}).join('');
+    r3=o.map(i=>{const d=od(i),dy=i.due?daysBetween(X.today,i.due):null;return dRow('<strong class="mono">'+esc(i.invNo)+'</strong><span class="sub2">PO '+esc(i.po)+' · due '+fd(i.due)+'</span>',[{v:i.pend,cls:d?'s4':'s2',tip:i.invNo+' · '+(d?'Due (overdue) ':'Not due yet ')+inr(i.pend)}],sc,'<strong>'+inr(i.pend)+'</strong>'+(d?'<span class="sub2 bad">▲ overdue '+(-dy)+' day'+(dy===-1?'':'s')+'</span>':'<span class="sub2">'+(dy==null?'no due date':'due in '+dy+' day'+(dy===1?'':'s'))+'</span>'));}).join('');
     t3='<div class="tw"><table class="tight"><thead><tr><th>Invoice</th><th>PO</th><th>Due date</th><th class="r">Pending</th><th>Status</th></tr></thead><tbody>'+o.map(i=>'<tr><td class="mono">'+esc(i.invNo)+'</td><td class="mono">'+esc(i.po)+'</td><td>'+fd(i.due)+'</td><td class="n">'+inr(i.pend)+'</td><td>'+(od(i)?'<span class="chip bad">Due · overdue</span>':'<span class="chip n0">Not due yet</span>')+'</td></tr>').join('')+'</tbody></table></div>';
   }
-  h+=dChart('due','Due and not due','Pending invoice amounts. “Due” means the due date has passed.',[{cls:'s4',t:'▲ Due (overdue)'},{cls:'s2',t:'Not due yet'}],r3,t3,['Nothing outstanding','Every invoice is paid, or none has been raised yet.'])+'</div>';
+  const ndAmt=Math.max(0,X.outstanding-X.overdue),op=pc0(X.overdue,X.outstanding);
+  const s3=X.outstanding>TOL?'<div class="dsum">'+donut([{v:X.overdue,cls:'s4',tip:'Due (overdue) '+inr(X.overdue)},{v:ndAmt,cls:'s2',tip:'Not due yet '+inr(ndAmt)}],op+'%','overdue',124,op+' percent of outstanding amount is overdue')+'<div class="facts"><div class="fact"><i class="s4"></i><span>Due (overdue)</span><b>'+inr(X.overdue)+'</b></div><div class="fact"><i class="s2"></i><span>Not due yet</span><b>'+inr(ndAmt)+'</b></div></div></div>':'';
+  h+=dChart('due','Due and not due','Pending invoice amounts. “Due” means the due date has passed.',[{cls:'s4',t:'▲ Due (overdue)'},{cls:'s2',t:'Not due yet'}],r3,t3,['Nothing outstanding','Every invoice is paid, or none has been raised yet.'],s3)+'</div></div>';
   host.innerHTML=h;
 }
 /* one shared tooltip for chart marks */
