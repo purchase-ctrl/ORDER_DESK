@@ -266,6 +266,16 @@ table.tight th,table.tight td{padding-left:10px;padding-right:10px}
   .content>*{animation:rise .35s var(--ease) both}
   @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 }
+
+#lock{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;background:var(--bg);color:var(--ink);font-family:inherit}
+#lock[hidden]{display:none}
+#lock form{width:100%;max-width:340px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px 24px;box-shadow:0 20px 50px rgba(60,20,70,.15);text-align:center}
+#lock .lk{font-size:34px;line-height:1;margin-bottom:8px}
+#lock h2{margin:0 0 4px;font-size:18px}
+#lock p{margin:0 0 16px;color:var(--muted);font-size:13px}
+#lock input{width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;margin-bottom:10px}
+#lock button{width:100%;padding:11px;border:0;border-radius:10px;font:inherit;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3))}
+#lock .er{color:#d6457f;font-size:12.5px;min-height:18px;margin-top:8px}
 </style>
 <title>Order &amp; Payment Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -275,6 +285,24 @@ table.tight th,table.tight td{padding-left:10px;padding-right:10px}
 
 </head>
 <body>
+<div id="lock" hidden><form id="lockf" autocomplete="off"><div class="lk">🔒</div><h2>Order &amp; Payment Desk</h2><p>Enter the password to open this site.</p><input type="password" id="lockp" placeholder="Password" autofocus><button type="submit">Unlock</button><div class="er" id="locke" role="alert"></div></form></div>
+<script>
+(function(){
+  function hh(s){var h1=0xdeadbeef,h2=0x41c6ce57,i,c;for(i=0;i<s.length;i++){c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677);}
+    h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+    return (4294967296*(2097151&h2)+(h1>>>0)).toString(36);}
+  var OK='1tpcwtz9668',KEY='orderdesk:unlocked',L=document.getElementById('lock');
+  function ok(){try{return sessionStorage.getItem(KEY)===OK;}catch(e){return false;}}
+  if(ok())return;
+  L.hidden=false;document.documentElement.style.overflow='hidden';
+  document.getElementById('lockf').addEventListener('submit',function(e){e.preventDefault();
+    var v=document.getElementById('lockp').value;
+    if(hh(v)===OK){try{sessionStorage.setItem(KEY,OK);}catch(x){}L.hidden=true;document.documentElement.style.overflow='';}
+    else{document.getElementById('locke').textContent='Wrong password. Try again.';document.getElementById('lockp').select();}
+  });
+})();
+</script>
+
 <div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gt" hidden>
   <div class="gcard">
     <div class="gart"><i class="gmark"></i><b class="gname">Order &amp; Payment Desk</b><p class="gtag">Advance, invoicing, payments and dispatch for every company, together in one calm place.</p>
