@@ -414,7 +414,7 @@ function calc(d){
   const G=(po,pid)=>{const k=gkey(po,pid);let g=groups.get(k);if(!g){g={k:k,po:String(po||'').trim(),pid:pid,poQty:0,poRate:0,received:0,invQty:0,adjusted:0,dispQty:0,logQty:0,hasAdv:false};groups.set(k,g);}return g;};
 
   const adv=[...d.advances].sort(srt);
-  adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;if(!g.by)g.by=whoName(a);});
+  adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;if(!g.by)g.by=whoName(a);if(a.createdBy==='pi'&&a.date&&(!g.piDate||a.date<g.piDate))g.piDate=a.date;});
 
   const payBy=new Map();d.payments.forEach(x=>payBy.set(x.invoiceId,(payBy.get(x.invoiceId)||0)+(+x.amount||0)));
   const inv=[...d.invoices].sort(srt).map(i=>{
@@ -508,7 +508,7 @@ function blocks(){
     const chipAdv=g=>g.required<=0?chip('n0','No advance set'):(g.pending<=TOL?(g.excess>TOL?chip('warn','Excess '+inr(g.excess)):chip('ok','Complete')):chip('warn','Pending'));
     return [
       {id:'adv-summary',name:'advance position by PO',title:'Advance position by PO',rows:R.groups.filter(g=>g.hasAdv).sort((a,b)=>cl(a).localeCompare(cl(b))||pr(a).localeCompare(pr(b))||a.po.localeCompare(b.po)),
-        cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
+        cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,cls:'mono'},{h:'PI date',t:r=>r.piDate||'',fmt:fd},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
           {h:'Order value',t:r=>r.orderValue,cls:'n',fmt:inr},{h:'Created by',t:r=>r.by||'',r:r=>r.by?'<span class="chip br">'+esc(r.by)+'</span>':'<span class="dim">—</span>'},{h:'Advance required',t:r=>r.required,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.received,cls:'n',fmt:inr,s:1},
           {h:'Pending',t:r=>r.pending,cls:'n',fmt:inr,s:1},{h:'Received %',t:r=>r.recvPct,cls:'n',fmt:pct},
           {h:'Adjusted in invoices',t:r=>r.adjusted,cls:'n',fmt:inr,s:1},{h:'Not yet adjusted',t:r=>r.unadj,cls:'n',fmt:inr,s:1},
@@ -528,7 +528,7 @@ function blocks(){
     const us=[...USERS.values()].sort((a,b)=>(roleOf(a)===roleOf(b)?0:(roleOf(a)==='admin'?-1:1))||String(a.user).localeCompare(String(b.user)));
     return [{id:'admin-users',name:'users',title:'Users',rows:us,acts:userActs,
       cols:[{h:'Username',t:r=>r.user+(ME&&r.id===ME.id?' (you)':'')},{h:'Role',t:r=>roleOf(r)==='admin'?'Admin':'User',r:r=>chip(roleOf(r)==='admin'?'ok':'n0',roleOf(r)==='admin'?'Admin':'User')},
-        {h:'PI Desk name',t:r=>r.piName||'',r:r=>r.piName?esc(r.piName):'<span class="dim">Not linked</span>'},{h:'Created',t:r=>r.created,fmt:fd},{h:'Entries added',t:r=>countBy(r.id),cls:'n',fmt:qty}],
+        {h:'PI Desk name',t:r=>r.piName||'',r:r=>r.piName?esc(r.piName):'<span class="dim">Not linked</span>'},{h:'Created',t:r=>r.created,fmt:fd},{h:'PIs synced',t:r=>pisBy(r),cls:'n',fmt:qty},{h:'Entries added',t:r=>countBy(r),cls:'n',fmt:qty}],
       empty:['No users yet','Accounts appear here as people sign up.']},
      {id:'admin-entries',name:'all entries',title:'All entries in this company',search:1,rows:adminEntries(),
       acts:r=>stdActs(r.sec,r.rec),
@@ -1184,7 +1184,9 @@ function stdActs(sec,r){
   if(canModify(r))return '<button class="lnk" data-act="edit" data-sec="'+sec+'" data-id="'+esc(r.id)+'">Edit</button><button class="lnk del" data-act="del" data-sec="'+sec+'" data-id="'+esc(r.id)+'">'+(S.delArm===r.id?'Confirm delete':'Delete')+'</button>';
   return '<span class="muted">Added by '+esc(whoName(r))+'</span>';
 }
-function countBy(uid){let n=0;COS.forEach(c=>SECS.forEach(s=>D[c.key][s].forEach(r=>{if(r.createdBy===uid)n++;})));return n;}
+/* Entries a user added themselves, plus every entry synced from the PIs made under their linked PI Desk name. */
+function countBy(u){const k=alnum(u.piName);let n=0;COS.forEach(c=>SECS.forEach(s=>D[c.key][s].forEach(r=>{if(r.createdBy===u.id||(k&&r.createdBy==='pi'&&alnum(r.createdByName)===k))n++;})));return n;}
+function pisBy(u){const k=alnum(u.piName);if(!k)return 0;const set=new Set();COS.forEach(c=>D[c.key].advances.forEach(r=>{if(r.createdBy==='pi'&&alnum(r.createdByName)===k&&r.po)set.add(c.key+'|'+norm(r.po));}));return set.size;}
 function userActs(u){
   if(ME&&u.id===ME.id)return '<span class="muted">You</span>';
   if(CLOUD)return '<button class="lnk" data-act="pname" data-id="'+esc(u.id)+'">Set PI name</button><span class="muted"> · password in Supabase</span>';
