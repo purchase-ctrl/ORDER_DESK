@@ -548,6 +548,9 @@ tbody tr:hover td{background:var(--head)}
 .ccard .row2 b{color:var(--ink);font-variant-numeric:tabular-nums}
 .dtip{position:fixed;z-index:100001;pointer-events:none;background:var(--ink);color:var(--surface);font-size:12.5px;font-weight:600;padding:7px 11px;border-radius:9px;box-shadow:var(--shadow-lg);max-width:320px}
 .dtip[hidden]{display:none}
+.pscroll{max-height:520px;overflow:auto;padding:2px 6px 2px 2px}
+.bkrow{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;background:var(--neutral-bg);border-radius:14px;padding:12px 16px;margin-bottom:12px}
+.bkrow strong{font-size:16px}
 @media (prefers-reduced-motion:reduce){.ccard,.dn-seg,.cseg{transition:none}.ccard:hover{transform:none}}
 @media (max-width:1100px){.dtiles{grid-template-columns:repeat(2,minmax(0,1fr))}.dgrid{grid-template-columns:minmax(0,1fr)}.dhero-body{grid-template-columns:minmax(0,1fr)}.dring{justify-content:flex-start}}
 @media (max-width:640px){.dpick{flex-wrap:wrap}.dhero{padding:20px 18px;border-radius:20px}.dtiles{gap:10px}.dt{padding:12px;gap:10px;flex-direction:column;align-items:flex-start}.dhstats{grid-template-columns:repeat(2,minmax(0,auto))}.sumline{grid-template-columns:1fr}.dcard{padding:16px 16px}.dhero select{max-width:none;flex:1 1 100%}}
@@ -627,7 +630,7 @@ const INTRO={
   products:'Final cost, advance % and payment terms for each product. Advance and invoices read from here.',
   advances:'Advance received against each PO, in as many parts as it arrives. Required advance = PO quantity × final cost × advance %.',
   invoices:'Each invoice takes cost and payment terms from the product, adds 18% GST and adjusts the advance already received for that PO.',
-  admin:'Manage users and every entry in this company. The admin can edit or delete any entry. Other users can change only the entries they added.',
+  admin:'Manage users and every entry in this company. The admin can edit or delete any entry. Other users can change only the entries they added. If a login is removed, the entries it created stay here with the admin.',
   payments:'Every invoice with what is due, what has been received and what is still pending. Record each payment as it comes in.',
   dispatches:'What is still to ship against each PO, and the dispatches already logged.'
 };
@@ -1034,7 +1037,7 @@ function buildPanel(){
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     '<input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
-    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn primary" data-act="xlfile" title="Upload the old Google Sheet, downloaded as Excel (.xlsx)">Import from Excel</button><input type="file" id="xlFile" accept=".xlsx,.xls" hidden>':'')+
+    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn primary" data-act="xlfile" title="Upload the old Google Sheet, downloaded as Excel (.xlsx)">Import from Excel</button><input type="file" id="xlFile" accept=".xlsx,.xls" hidden>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
@@ -1219,6 +1222,8 @@ function readForm(sec){
   const id=S.form.id||undefined;
   if(sec==='clients'){
     const name=val('c_name');if(!name)return {err:'Client name is required.'};
+    const dupC=[...D[S.co].clients.values()].find(c=>c.id!==id&&cnorm(c.name)===cnorm(name));
+    if(dupC)return {err:'This client already exists as “'+dupC.name+'”. Use that account instead of adding a second one.'};
     return {row:{id:id,name:name,brand:val('c_brand'),gstin:val('c_gstin').toUpperCase(),contact:val('c_contact'),phone:val('c_phone'),email:val('c_email'),city:val('c_city'),address:val('c_addr'),notes:val('c_notes')}};
   }
   if(sec==='products'){
@@ -1245,12 +1250,14 @@ function readForm(sec){
     if(!(num('a_qty')>0))return {err:'Enter the PO quantity.'};
     if(!(num('a_rate')>0))return {err:'Enter the PO rate.'};
     if(!(num('a_recv')>0))return {err:'Enter the advance received.'};
+    const dupA=[...D[S.co].advances.values()].some(r=>r.id!==id&&r.productId===pid&&norm(r.po)===norm(po)&&(r.date||'')===val('a_date')&&Math.abs((+r.received||0)-num('a_recv'))<0.005);
+    if(dupA)return {err:'This advance is already entered (same PI / PO, date and amount).'};
     return {row:{id:id,date:val('a_date'),productId:pid,po:po,poQty:num('a_qty'),poRate:num('a_rate'),received:num('a_recv'),note:val('a_note')}};
   }
   if(sec==='invoices'){
     const no=val('i_no');
     if(!no)return {err:'Invoice number is required.'};
-    if([...D[S.co].invoices.values()].some(i=>i.id!==id&&norm(i.invNo)===norm(no)))return {err:'An invoice with this number already exists.'};
+    if([...D[S.co].invoices.values()].some(i=>i.id!==id&&norm(i.invNo)===norm(no)&&i.productId===pid&&norm(i.po)===norm(po)))return {err:'This invoice is already entered for this PI / PO and product.'};
     if(!val('i_date'))return {err:'Enter the invoice date.'};
     if(!(num('i_qty')>0))return {err:'Enter the invoice quantity.'};
     return {row:{id:id,date:val('i_date'),invNo:no,productId:pid,po:po,qty:num('i_qty'),extra:num('i_extra'),paid:(D[S.co].invoices.get(id)||{}).paid||0}};
@@ -1312,6 +1319,8 @@ document.addEventListener('click',e=>{
   }
   else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';S.filters={};S.sorts={};closeFilter();saveUI();renderTabs();buildPanel();}
   else if(act==='cloudimport'){cloudImport();}
+  else if(act==='mybk'){myBackup(a.dataset.fmt);}
+  else if(act==='mergeclients'){mergeClients();}
   else if(act==='xlfile'){const f=$('#xlFile');if(f)f.click();}
   else if(act==='cloudfile'){const f=$('#cloudFile');if(f)f.click();}
   else if(act==='pname'){if(isAdmin())showPiName(a.dataset.id);}
@@ -1883,7 +1892,7 @@ function renderDash(){
   }
   /* product list */
   const pRows=X.prods.map(p=>{const gs=R.groups.filter(g=>g.pid===p.id);return {p:p,c:D[S.co].clients.get(p.clientId),pos:new Set(gs.map(g=>norm(g.po))).size,qty:gs.reduce((a,g)=>a+(g.poQty||0),0),val:gs.reduce((a,g)=>a+(g.orderValue||0),0)};});
-  h+='<section class="dcard"><div class="dh"><h3>Product list<span class="cnt">'+pRows.length+'</span></h3></div><p class="dsub">Final cost, advance and payment terms for each product, with how much has been ordered.</p>'+(pRows.length?'<div class="dcards">'+
+  h+='<section class="dcard"><div class="dh"><h3>Product list<span class="cnt">'+pRows.length+'</span></h3></div><p class="dsub">Final cost, advance and payment terms for each product, with how much has been ordered.</p>'+(pRows.length?'<div class="dcards pscroll" tabindex="0" aria-label="Product list">'+
     pRows.map(r=>{const ap=advPctOf(r.p);return '<article class="pcard">'+(cid?'':'<div class="pc">'+esc(r.c?r.c.name:'—')+'</div>')+'<div class="pn">'+esc(r.p.name)+'</div><div class="pcost">'+inr(+r.p.cost||0)+'<small>final cost</small></div>'+
       '<div class="pchips"><span>Advance '+(ap==null?'—':pct(ap))+'</span><span>Terms '+qty(+r.p.terms||0)+' days</span></div>'+
       '<div class="pfoot"><span><b>'+r.pos+'</b>PI / PO</span><span><b>'+qty(r.qty)+'</b>units</span><span><b>'+inr(r.val)+'</b>order value</span></div></article>';}).join('')+'</div>':'<div class="empty"><h3>No products</h3><p class="muted">Add products in the Products tab.</p></div>')+'</section>';
@@ -1917,7 +1926,8 @@ function renderDash(){
   }
   const ndAmt=Math.max(0,X.outstanding-X.overdue),op=pc0(X.overdue,X.outstanding);
   const s3=X.outstanding>TOL?'<div class="dsum">'+donut([{v:X.overdue,cls:'s4',tip:'Due (overdue) '+inr(X.overdue)},{v:ndAmt,cls:'s2',tip:'Not due yet '+inr(ndAmt)}],op+'%','overdue',124,op+' percent of outstanding amount is overdue')+'<div class="facts"><div class="fact"><i class="s4"></i><span>Due (overdue)</span><b>'+inr(X.overdue)+'</b></div><div class="fact"><i class="s2"></i><span>Not due yet</span><b>'+inr(ndAmt)+'</b></div></div></div>':'';
-  h+=dChart('due','Due and not due','Pending invoice amounts. “Due” means the due date has passed.',[{cls:'s4',t:'▲ Due (overdue)'},{cls:'s2',t:'Not due yet'}],r3,t3,['Nothing outstanding','Every invoice is paid, or none has been raised yet.'],s3)+'</div></div>';
+  h+=dChart('due','Due and not due','Pending invoice amounts. “Due” means the due date has passed.',[{cls:'s4',t:'▲ Due (overdue)'},{cls:'s2',t:'Not due yet'}],r3,t3,['Nothing outstanding','Every invoice is paid, or none has been raised yet.'],s3)+'</div>';
+  h+=bkCardHTML()+'</div>';
   host.innerHTML=h;
 }
 /* one shared tooltip for chart marks */
@@ -2167,12 +2177,13 @@ document.addEventListener('submit',async e=>{
 });
 async function cloudImport(){
   if(!isAdmin())return;
-  const rows=[];
-  COS.forEach(c=>SECS.forEach(s=>{let a=[];try{a=JSON.parse(localStorage.getItem(lsKey(c.key,s))||'[]');}catch(e){}
-    a.forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'&&r.createdByName!=='PI Generator'?(alnum(r.createdByName)||null):null});});}));
+  const rows=[];let skippedN=0;
+  COS.forEach(c=>{const raw={};SECS.forEach(s=>{let a=[];try{a=JSON.parse(localStorage.getItem(lsKey(c.key,s))||'[]');}catch(e){}raw[s]=a.filter(r=>r&&r.id);});
+    const dd=dedupeData(c.key,raw);skippedN+=dd.skipped;SECS.forEach(s=>{
+    dd.data[s].forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'&&r.createdByName!=='PI Generator'?(alnum(r.createdByName)||null):null});});});});
   piSeen().forEach(k=>rows.push({company:'_',section:'pi_seen',id:k,data:{},created_by_name:'pi',by_pi:true}));
   if(!rows.length){toast('No data saved in this browser to upload.');return;}
-  if(!confirm('Upload '+rows.length+' entries saved in this browser to the shared cloud?\n\nEntries that already exist in the cloud are left as they are.'))return;
+  if(!confirm('Upload '+rows.length+' entries saved in this browser to the shared cloud?'+(skippedN?'\n\n'+skippedN+' already there and skipped, so nothing is entered twice.':'')+'\n\nEntries that already exist in the cloud are left as they are.'))return;
   try{
     for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
     await cloudLoad();buildAll();toast('Uploaded '+rows.length+' entries to the cloud');
@@ -2193,12 +2204,13 @@ function cloudImportFile(file){
       oName=u.piName||u.user;
       ownerNote='\n\nThese entries will belong to '+u.user+(u.piName?'':'. Link this user to the PI Desk name "'+u.user+'" in the Admin tab so that they can see them')+'.';
     }
-    COS.forEach(c=>SECS.forEach(s=>{((j.data[c.key]&&j.data[c.key][s])||[]).forEach(r=>{if(!(r&&r.id))return;
+    let skippedN=0;
+    COS.forEach(c=>{const dd=dedupeData(c.key,j.data[c.key]||{});skippedN+=dd.skipped;SECS.forEach(s=>{dd.data[s].forEach(r=>{if(!(r&&r.id))return;
       if(oName){r=Object.assign({},r,{createdBy:'pi',createdByName:oName});}
-      rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'&&r.createdByName!=='PI Generator'?(alnum(r.createdByName)||null):null});});}));
-    if(!rows.length){toast('This backup has no entries.');return;}
-    const per=COS.map(c=>c.name+': '+SECS.reduce((a,s)=>a+((j.data[c.key]&&j.data[c.key][s])||[]).length,0)).join('\n');
-    if(!confirm('Upload '+rows.length+' entries from this backup to the shared cloud?\n\n'+per+ownerNote+'\n\nEntries that already exist in the cloud are left as they are.'))return;
+      rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'&&r.createdByName!=='PI Generator'?(alnum(r.createdByName)||null):null});});});});
+    if(!rows.length){toast(skippedN?'Everything in this backup is already in the cloud.':'This backup has no entries.');return;}
+    const per=COS.map(c=>c.name+': '+rows.filter(r=>r.company===c.key).length).join('\n')+(skippedN?'\n\n'+skippedN+' already there and skipped, so nothing is entered twice.':'');
+    if(!confirm('Upload '+rows.length+' new entries from this backup to the shared cloud?\n\n'+per+ownerNote+'\n\nEntries that already exist in the cloud are left as they are.'))return;
     try{
       for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
       await cloudLoad();buildAll();toast('Uploaded '+rows.length+' entries to the cloud');
@@ -2256,16 +2268,113 @@ document.addEventListener('submit',async e=>{
   const co=$('#xl_co').value,own=$('#xl_own').value,u=own?USERS.get(own):null,er=$('#ferr');
   const oName=u?(u.piName||u.user):null;
   const rows=[];
-  Object.keys(XL.data).forEach(sec=>XL.data[sec].forEach(r0=>{const r=oName?Object.assign({},r0,{createdBy:'pi',createdByName:oName}):r0;
+  const dd=dedupeData(co,XL.data);
+  Object.keys(dd.data).forEach(sec=>dd.data[sec].forEach(r0=>{const r=oName?Object.assign({},r0,{createdBy:'pi',createdByName:oName}):r0;
     rows.push({company:co,section:sec,id:r.id,data:r,created_by_name:oName||ME.user,by_pi:!!oName,owner_key:oName?(alnum(oName)||null):null});}));
   const cn=COS.find(c=>c.key===co).name;
-  if(!confirm('Upload '+rows.length+' entries to '+cn+(u?' for '+u.user:'')+'?'+(u&&!u.piName?'\n\nAfter this, link '+u.user+' to the PI Desk name "'+u.user+'" in the Admin tab so that they can see these entries.':'')+'\n\nEntries that already exist in the cloud are left as they are.'))return;
+  if(!rows.length){er.textContent='Everything in this file is already in '+cn+'. Nothing to upload.';return;}
+  if(!confirm('Upload '+rows.length+' new entries to '+cn+(u?' for '+u.user:'')+'?'+(dd.skipped?'\n\n'+dd.skipped+' entr'+(dd.skipped===1?'y is':'ies are')+' already there (same client, product, invoice or payment) and will be skipped, so nothing is entered twice.':'')+(u&&!u.piName?'\n\nAfter this, link '+u.user+' to the PI Desk name "'+u.user+'" in the Admin tab so that they can see these entries.':'')+'\n\nEntries that already exist in the cloud are left as they are.'))return;
   er.textContent='Uploading…';
   try{
     for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
     await cloudLoad();XL=null;S.form=null;buildAll();toast('Uploaded '+rows.length+' entries to '+cn);
   }catch(err){if(!cloudGone(err))er.textContent='Upload failed: '+((err&&err.message)||'unknown error');}
 });
+
+/* ---------- no double entries, one account per client ---------- */
+const cnorm=s=>String(s||'').toLowerCase().replace(/\bprivate\b/g,'pvt').replace(/\blimited\b/g,'ltd').replace(/[^a-z0-9]/g,'');
+const pnorm=s=>String(s||'').replace(/\s+/g,' ').trim().toLowerCase();
+const dkey=(...a)=>a.map(x=>typeof x==='number'?String(Math.round(x*100)/100):String(x==null?'':x).trim().toLowerCase()).join('|');
+/* Drops rows that already exist (same client name, same product, same invoice, same payment...) and points the rest at the existing client / product. */
+function dedupeData(co,data){
+  const d=D[co],sk=0;let skipped=0;
+  const out={clients:[],products:[],advances:[],invoices:[],payments:[],dispatches:[]};
+  const cmap={},pmap={},imap={};
+  const exC=new Map();d.clients.forEach(c=>exC.set(cnorm(c.name),c.id));
+  (data.clients||[]).forEach(c=>{const k=cnorm(c.name);if(exC.has(k)){cmap[c.id]=exC.get(k);skipped++;return;}exC.set(k,c.id);cmap[c.id]=c.id;out.clients.push(c);});
+  const exP=new Map();d.products.forEach(p=>exP.set(p.clientId+'|'+pnorm(p.name),p.id));
+  (data.products||[]).forEach(p=>{const cid=cmap[p.clientId]||p.clientId,k=cid+'|'+pnorm(p.name);if(exP.has(k)){pmap[p.id]=exP.get(k);skipped++;return;}exP.set(k,p.id);pmap[p.id]=p.id;out.products.push(Object.assign({},p,{clientId:cid}));});
+  const pid=r=>pmap[r.productId]||r.productId;
+  const seen=new Set();
+  d.advances.forEach(r=>seen.add('a|'+dkey(r.productId,norm(r.po),r.date||'',+r.received||0,+r.poQty||0)));
+  (data.advances||[]).forEach(r=>{const p=pid(r),k='a|'+dkey(p,norm(r.po),r.date||'',+r.received||0,+r.poQty||0);if(seen.has(k)){skipped++;return;}seen.add(k);out.advances.push(Object.assign({},r,{productId:p}));});
+  const exI=new Map();d.invoices.forEach(r=>exI.set(dkey(r.productId,norm(r.po),norm(r.invNo),+r.qty||0,r.date||''),r.id));
+  (data.invoices||[]).forEach(r=>{const p=pid(r),k=dkey(p,norm(r.po),norm(r.invNo),+r.qty||0,r.date||'');if(exI.has(k)){imap[r.id]=exI.get(k);skipped++;return;}exI.set(k,r.id);imap[r.id]=r.id;out.invoices.push(Object.assign({},r,{productId:p}));});
+  d.payments.forEach(r=>seen.add('m|'+dkey(r.invoiceId,r.date||'',+r.amount||0,r.ref||'')));
+  (data.payments||[]).forEach(r=>{const i=imap[r.invoiceId]||r.invoiceId,k='m|'+dkey(i,r.date||'',+r.amount||0,r.ref||'');if(seen.has(k)){skipped++;return;}seen.add(k);out.payments.push(Object.assign({},r,{invoiceId:i}));});
+  d.dispatches.forEach(r=>seen.add('d|'+dkey(r.productId,norm(r.po),r.date||'',+r.qty||0,norm(r.invNo))));
+  (data.dispatches||[]).forEach(r=>{const p=pid(r),k='d|'+dkey(p,norm(r.po),r.date||'',+r.qty||0,norm(r.invNo));if(seen.has(k)){skipped++;return;}seen.add(k);out.dispatches.push(Object.assign({},r,{productId:p}));});
+  return {data:out,skipped:skipped};
+}
+/* Admin: merge clients that are the same company saved twice (also moves their products, advances and invoices) */
+async function mergeClients(){
+  if(!isAdmin())return;
+  const d=D[S.co],groups=new Map();
+  d.clients.forEach(c=>{const k=cnorm(c.name);if(!k)return;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(c);});
+  const dups=[...groups.values()].filter(g=>g.length>1);
+  const cn=COS.find(c=>c.key===S.co).name;
+  if(!dups.length){toast('No duplicate clients in '+cn+'.');return;}
+  if(!confirm('Merge '+dups.length+' client'+(dups.length===1?'':'s')+' saved more than once in '+cn+'?\n\n'+dups.map(g=>'• '+g.map(c=>c.name).join('  =  ')).join('\n')+'\n\nTheir products, advances, invoices and dispatches are moved to one account. Nothing else is deleted.'))return;
+  let n=0;
+  for(const g of dups){
+    const cnt=c=>[...d.products.values()].filter(p=>p.clientId===c.id).length;
+    g.sort((a,b)=>cnt(b)-cnt(a)||String(a.createdAt||'').localeCompare(String(b.createdAt||''))||String(a.id).localeCompare(String(b.id)));
+    let keep=g[0];
+    for(const c of g.slice(1)){
+      const fill=Object.assign({},keep);['brand','gstin','contact','phone','email','city','address'].forEach(f=>{if(!fill[f]&&c[f])fill[f]=c[f];});
+      if(JSON.stringify(fill)!==JSON.stringify(keep)){if(await put('clients',fill))keep=d.clients.get(keep.id)||fill;}
+      for(const p of [...d.products.values()].filter(p=>p.clientId===c.id)){
+        const twin=[...d.products.values()].find(q=>q.clientId===keep.id&&pnorm(q.name)===pnorm(p.name));
+        if(twin){
+          for(const sec of ['advances','invoices','dispatches'])for(const r of [...d[sec].values()].filter(r=>r.productId===p.id))await put(sec,Object.assign({},r,{productId:twin.id}));
+          await del('products',p.id);
+        }else await put('products',Object.assign({},p,{clientId:keep.id}));
+      }
+      if(await del('clients',c.id))n++;
+    }
+  }
+  toast('Merged '+n+' duplicate account'+(n===1?'':'s'));
+}
+/* ---------- every user can back up their own data ---------- */
+const BK_KEY=()=>'orderdesk:mybk:'+(ME?ME.id:'');
+const lastBk=()=>{try{return localStorage.getItem(BK_KEY())||'';}catch(e){return '';}};
+function markBk(){try{localStorage.setItem(BK_KEY(),new Date().toISOString());}catch(e){}}
+function bkCardHTML(){
+  const lb=lastBk(),days=lb?Math.floor((Date.now()-new Date(lb).getTime())/864e5):null;
+  const stale=days==null||days>=30;
+  const n=COS.reduce((a,c)=>a+SECS.reduce((b,s)=>b+D[c.key][s].size,0),0);
+  return '<section class="dcard" id="mybk"><div class="dh"><h3>Back up my data</h3></div><p class="dsub">'+(isAdmin()?'A copy of everything in the desk (all companies and all users).':'A copy of the clients, products, advances, invoices, payments and dispatches you can see here.')+' Save one now and then, so you always have your own copy.</p>'+
+    '<div class="bkrow"><div><strong>'+n+' entries</strong><span class="sub2">'+(lb?'Last backup: '+fd(lb.slice(0,10))+(days>0?' ('+days+' day'+(days===1?'':'s')+' ago)':' (today)'):'No backup saved from this browser yet')+'</span></div>'+
+    (stale?'<span class="pctchip bad">'+(lb?'Backup is over 30 days old':'Not backed up yet')+'</span>':'<span class="pctchip ok">Up to date</span>')+'</div>'+
+    '<div class="fa"><button type="button" class="btn primary" data-act="mybk" data-fmt="xlsx">Download Excel</button><button type="button" class="btn" data-act="mybk" data-fmt="json">Download backup file (.json)</button><span id="bk_msg" class="fy-msg" role="status"></span></div></section>';
+}
+async function myBackup(fmt){
+  const msg=$('#bk_msg'),say=t=>{if(msg)msg.textContent=t;};
+  const who=(ME?ME.user:'me').replace(/[^A-Za-z0-9_.-]/g,'_'),day=todayStr();
+  try{
+    if(fmt==='json'){
+      const out={app:'order-desk',version:1,exported:new Date().toISOString(),by:ME?ME.user:'',data:{}};
+      COS.forEach(c=>{out.data[c.key]={};SECS.forEach(s=>{out.data[c.key][s]=[...D[c.key][s].values()];});});
+      saveBlob('order-desk-'+who+'-'+day+'.json',JSON.stringify(out,null,1),'application/json');
+    }else{
+      say('Preparing the Excel file…');
+      const X=await loadXLSX(),wb=X.utils.book_new(),sh={Clients:[],Products:[],Advances:[],Invoices:[],Payments:[],Dispatches:[]};
+      COS.forEach(c=>{
+        const d=D[c.key],r=calc(dataFor(c.key)),co=c.name;
+        d.clients.forEach(x=>sh.Clients.push({Company:co,Name:x.name,Brand:x.brand||'',GSTIN:x.gstin||'',Contact:x.contact||'',Phone:x.phone||'',Email:x.email||'',City:x.city||'',Address:x.address||'',Notes:x.notes||''}));
+        d.products.forEach(p=>{const cl=d.clients.get(p.clientId);sh.Products.push({Company:co,Client:cl?cl.name:'',Product:p.name,'Final cost':+p.cost||0,'Advance %':+p.advPct||0,'Terms (days)':+p.terms||0});});
+        r.advRows.forEach(a=>sh.Advances.push({Company:co,Date:a.date||'',Client:a.c?a.c.name:'',Product:a.p?a.p.name:'','PI / PO':a.po,'PO qty':+a.poQty||0,'PO rate':+a.poRate||0,'Advance required':Math.round(a.req*100)/100,'Advance received':+a.received||0,'Pending after this':Math.round(a.pendAfter*100)/100,'Note':a.note||''}));
+        r.inv.forEach(i=>sh.Invoices.push({Company:co,Date:i.date||'','Invoice no':i.invNo,Client:i.c?i.c.name:'',Product:i.p?i.p.name:'','PI / PO':i.po,Qty:i.q,'Amount (no GST)':Math.round(i.nonGst*100)/100,'Extra charges':i.extra,GST:Math.round(i.gst*100)/100,'Invoice total':Math.round(i.total*100)/100,'Advance adjusted':Math.round(i.adj*100)/100,'Net receivable':Math.round(i.net*100)/100,Received:Math.round(i.paid*100)/100,Pending:Math.round(i.pend*100)/100,'Due date':i.due||'',Status:i.status}));
+        r.pay.forEach(x=>sh.Payments.push({Company:co,Date:x.date||'','Invoice no':x.i?x.i.invNo:'',Client:x.c?x.c.name:'','Amount received':x.amt,Mode:x.mode||'','UTR / reference':x.ref||'',Note:x.note||''}));
+        r.dis.forEach(x=>sh.Dispatches.push({Company:co,Date:x.date||'',Client:x.c?x.c.name:'',Product:x.p?x.p.name:'','PI / PO':x.po,Qty:x.q,'Invoice no':x.invNo||'',Transporter:x.transporter||'','LR / AWB':x.lr||'',Status:x.status||''}));
+      });
+      Object.keys(sh).forEach(k=>{const ws=sh[k].length?X.utils.json_to_sheet(sh[k]):X.utils.aoa_to_sheet([['No entries']]);X.utils.book_append_sheet(wb,ws,k);});
+      const buf=X.write(wb,{type:'array',bookType:'xlsx'});
+      saveBlob('order-desk-'+who+'-'+day+'.xlsx',buf,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
+    markBk();say('Saved to your downloads.');if(S.tab==='dashboard')renderDash();
+  }catch(e){say((e&&e.message)||'Could not create the backup.');}
+}
 
 /* ---------- Excel-style column filters and sorting ---------- */
 S.filters={};S.sorts={};
