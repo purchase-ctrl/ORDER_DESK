@@ -1034,7 +1034,7 @@ function buildPanel(){
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     '<input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
-    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden>':'')+
+    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn primary" data-act="xlfile" title="Upload the old Google Sheet, downloaded as Excel (.xlsx)">Import from Excel</button><input type="file" id="xlFile" accept=".xlsx,.xls" hidden>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
@@ -1312,6 +1312,7 @@ document.addEventListener('click',e=>{
   }
   else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';S.filters={};S.sorts={};closeFilter();saveUI();renderTabs();buildPanel();}
   else if(act==='cloudimport'){cloudImport();}
+  else if(act==='xlfile'){const f=$('#xlFile');if(f)f.click();}
   else if(act==='cloudfile'){const f=$('#cloudFile');if(f)f.click();}
   else if(act==='pname'){if(isAdmin())showPiName(a.dataset.id);}
   else if(act==='fybk'){fyBackup(a.dataset.mode);}
@@ -2183,11 +2184,21 @@ function cloudImportFile(file){
   const fr=new FileReader();
   fr.onload=async()=>{
     let j;try{j=JSON.parse(fr.result);if(!j||j.app!=='order-desk'||!j.data)throw new Error('bad');}catch(e){toast('That file is not an Order & Payment Desk backup. Use the Backup button of the old desk to make one.');return;}
-    const rows=[];
-    COS.forEach(c=>SECS.forEach(s=>{((j.data[c.key]&&j.data[c.key][s])||[]).forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'&&r.createdByName!=='PI Generator'?(alnum(r.createdByName)||null):null});});}));
+    const rows=[];let ownerNote='';
+    /* a file can name the login its entries belong to: they then show up for that user (matched through the "PI Desk name" link) */
+    let oName=null;
+    if(j.owner&&j.owner.username){
+      const u=[...USERS.values()].find(x=>alnum(x.user)===alnum(j.owner.username));
+      if(!u){toast('The login "'+j.owner.username+'" does not exist yet. Ask that person to sign up first, then upload again.');return;}
+      oName=u.piName||u.user;
+      ownerNote='\n\nThese entries will belong to '+u.user+(u.piName?'':'. Link this user to the PI Desk name "'+u.user+'" in the Admin tab so that they can see them')+'.';
+    }
+    COS.forEach(c=>SECS.forEach(s=>{((j.data[c.key]&&j.data[c.key][s])||[]).forEach(r=>{if(!(r&&r.id))return;
+      if(oName){r=Object.assign({},r,{createdBy:'pi',createdByName:oName});}
+      rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'&&r.createdByName!=='PI Generator'?(alnum(r.createdByName)||null):null});});}));
     if(!rows.length){toast('This backup has no entries.');return;}
     const per=COS.map(c=>c.name+': '+SECS.reduce((a,s)=>a+((j.data[c.key]&&j.data[c.key][s])||[]).length,0)).join('\n');
-    if(!confirm('Upload '+rows.length+' entries from this backup to the shared cloud?\n\n'+per+'\n\nEntries that already exist in the cloud are left as they are.'))return;
+    if(!confirm('Upload '+rows.length+' entries from this backup to the shared cloud?\n\n'+per+ownerNote+'\n\nEntries that already exist in the cloud are left as they are.'))return;
     try{
       for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
       await cloudLoad();buildAll();toast('Uploaded '+rows.length+' entries to the cloud');
@@ -2196,6 +2207,65 @@ function cloudImportFile(file){
   fr.readAsText(file);
 }
 document.addEventListener('change',e=>{if(e.target&&e.target.id==='cloudFile'&&e.target.files[0]){cloudImportFile(e.target.files[0]);e.target.value='';}});
+
+/* ---------- Import the old Google Sheet (downloaded as .xlsx) straight into the cloud ---------- */
+let XL=null;
+function xlParse(XLSX,buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  const rowsOf=n=>{const nm=wb.SheetNames.find(x=>x.toUpperCase().indexOf(n)>=0);return nm?XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,raw:true,defval:null}):null;};
+  const master=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames.find(x=>/^MASTER/i.test(x))||wb.SheetNames[0]],{header:1,raw:true,defval:null});
+  const advS=rowsOf('ADVANCE DETAILS'),invS=rowsOf('DAILY INVOICING');
+  if(!advS&&!invS)throw new Error('This workbook has no ADVANCE DETAILS or DAILY INVOICING tab.');
+  const N=x=>String(x==null?'':x).replace(/\s+/g,' ').trim().toLowerCase(),T=x=>String(x==null?'':x).replace(/\s+/g,' ').trim();
+  const isn=x=>typeof x==='number'&&isFinite(x),nm=x=>isn(x)?x:0;
+  const poS=x=>{if(x==null)return '';if(isn(x)&&x===Math.floor(x))return String(x);return T(x);};
+  const out={clients:[],products:[],advances:[],invoices:[]},cid={},pid={},added=[];
+  const client=name=>{const k=N(name);if(!cid[k]){cid[k]='xl_c_'+(Object.keys(cid).length+1);out.clients.push({id:cid[k],name:T(name)});}return cid[k];};
+  master.slice(2).forEach(r=>{
+    if(!(r[0]&&r[1]&&isn(r[2])))return;
+    const c=client(r[0]),k=c+'|'+N(r[1]);if(pid[k])return;
+    pid[k]='xl_p_'+(Object.keys(pid).length+1);
+    out.products.push({id:pid[k],clientId:c,name:T(r[1]),cost:r[2],advPct:r[2]>0?Math.round(Math.min(100,nm(r[8])/r[2]*100)*100)/100:0,terms:isn(r[7])&&r[7]>0?Math.round(r[7]):30});
+  });
+  const P=(cn,pn,cost)=>{const c=client(cn),k=c+'|'+N(pn);
+    if(!pid[k]){if(!(cost>0))return null;pid[k]='xl_p_'+(Object.keys(pid).length+1);out.products.push({id:pid[k],clientId:c,name:T(pn),cost:Math.round(cost*1e4)/1e4,advPct:0,terms:30});added.push(T(pn));}
+    return pid[k];};
+  (advS||[]).forEach((r,i)=>{if(N(r[1])==='customer name'||!(r[1]&&r[2]&&r[3]))return;const p=P(r[1],r[2],0);if(!p)return;
+    out.advances.push({id:'xl_a_'+(i+2),date:stmtDate(r[0]),productId:p,po:poS(r[3]),poQty:nm(r[4]),poRate:nm(r[5]),received:nm(r[8])});});
+  (invS||[]).forEach((r,i)=>{if(N(r[3])==='customer name'||!(r[3]&&r[1]&&r[5]))return;const p=P(r[3],r[4],nm(r[5])?nm(r[8])/nm(r[5]):0);if(!p)return;
+    out.invoices.push({id:'xl_i_'+(i+1),date:stmtDate(r[0]),invNo:poS(r[1]),productId:p,po:poS(r[2]),qty:nm(r[5]),extra:nm(r[9]),paid:nm(r[17])});});
+  return {data:out,added:added};
+}
+async function xlStart(file){
+  try{
+    const XLSX=await loadXLSX();
+    const res=xlParse(XLSX,await file.arrayBuffer());
+    XL=res;const d=res.data;
+    const users=[...USERS.values()].filter(u=>roleOf(u)!=='admin').sort((a,b)=>String(a.user).localeCompare(String(b.user)));
+    $('#formHost').innerHTML='<form id="xlf" class="form" novalidate><h3>Import from Excel</h3><p class="muted">'+esc(file.name)+': '+d.clients.length+' clients, '+d.products.length+' products, '+d.advances.length+' advance rows, '+d.invoices.length+' invoices.'+(res.added.length?' '+res.added.length+' product'+(res.added.length===1?' was':'s were')+' missing from the Master tab and will be added from the invoice rate ('+esc([...new Set(res.added)].join(', '))+').':'')+'</p><div class="grid">'+
+      '<div class="f"><label for="xl_co">Company</label><select id="xl_co">'+COS.map(c=>'<option value="'+c.key+'"'+(c.key===S.co?' selected':'')+'>'+esc(c.name)+'</option>').join('')+'</select></div>'+
+      '<div class="f"><label for="xl_own">These entries belong to</label><select id="xl_own"><option value="">Nobody (admin only)</option>'+users.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.user)+(u.piName?'':' (not linked to a PI Desk name)')+'</option>').join('')+'</select></div></div>'+
+      '<div class="fa"><button class="btn primary" type="submit">Upload to cloud</button><button class="btn" type="button" data-act="cancel">Cancel</button><span id="ferr" class="ferr" role="alert"></span></div></form>';
+    const f=$('#xlf');f.scrollIntoView&&f.scrollIntoView({block:'nearest'});
+  }catch(e){toast((e&&e.message)||'Could not read this Excel file.');}
+}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='xlFile'&&e.target.files[0]){xlStart(e.target.files[0]);e.target.value='';}});
+document.addEventListener('submit',async e=>{
+  if(!e.target||e.target.id!=='xlf')return;e.preventDefault();
+  if(!isAdmin()||!XL)return;
+  const co=$('#xl_co').value,own=$('#xl_own').value,u=own?USERS.get(own):null,er=$('#ferr');
+  const oName=u?(u.piName||u.user):null;
+  const rows=[];
+  Object.keys(XL.data).forEach(sec=>XL.data[sec].forEach(r0=>{const r=oName?Object.assign({},r0,{createdBy:'pi',createdByName:oName}):r0;
+    rows.push({company:co,section:sec,id:r.id,data:r,created_by_name:oName||ME.user,by_pi:!!oName,owner_key:oName?(alnum(oName)||null):null});}));
+  const cn=COS.find(c=>c.key===co).name;
+  if(!confirm('Upload '+rows.length+' entries to '+cn+(u?' for '+u.user:'')+'?'+(u&&!u.piName?'\n\nAfter this, link '+u.user+' to the PI Desk name "'+u.user+'" in the Admin tab so that they can see these entries.':'')+'\n\nEntries that already exist in the cloud are left as they are.'))return;
+  er.textContent='Uploading…';
+  try{
+    for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
+    await cloudLoad();XL=null;S.form=null;buildAll();toast('Uploaded '+rows.length+' entries to '+cn);
+  }catch(err){if(!cloudGone(err))er.textContent='Upload failed: '+((err&&err.message)||'unknown error');}
+});
 
 /* ---------- Excel-style column filters and sorting ---------- */
 S.filters={};S.sorts={};
