@@ -436,6 +436,24 @@ tbody tr:hover td{background:var(--head)}
   .kpi{padding:12px}
 }
 
+/* ---------- left-side alerts panel ---------- */
+#banner{position:static}
+.atab{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:80;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:96px;min-width:44px;padding:12px 8px;border:1px solid var(--line);border-left:0;border-radius:0 14px 14px 0;background:var(--surface);color:var(--ink);font:inherit;font-weight:700;font-size:13px;cursor:pointer;box-shadow:var(--shadow-lg)}
+.atab span{writing-mode:vertical-rl;transform:rotate(180deg);letter-spacing:.04em}
+.atab b{min-width:22px;height:22px;padding:0 6px;border-radius:99px;display:inline-grid;place-items:center;font-size:12px;background:var(--bad);color:#fff}
+.atab.has{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.atab:hover{background:var(--neutral-bg)}
+.atab:focus-visible,.apanel .btn:focus-visible{outline:3px solid var(--d2);outline-offset:2px}
+.apanel{position:fixed;left:0;top:0;bottom:0;z-index:90;width:min(400px,100vw);overflow:auto;padding:16px;background:var(--bg);border-right:1px solid var(--line);box-shadow:var(--shadow-lg);transform:translateX(-104%);visibility:hidden;transition:transform .25s ease-out,visibility 0s linear .25s}
+.apanel.open{transform:none;visibility:visible;transition:transform .25s ease-out,visibility 0s}
+.ahead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.ahead h2{margin:0;font-size:18px}
+.aitem{margin-bottom:12px}
+.aitem .note{margin:0}
+.ahide{display:flex;justify-content:flex-end;margin-top:6px}
+.afoot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 0;font-size:13px;color:var(--muted)}
+.aempty{padding:8px 2px}
+@media (prefers-reduced-motion:reduce){.apanel,.apanel.open{transition:none}}
 /* ---------- dashboard ---------- */
 :root{--d1:#038f7e;--d2:#5a58d0;--d3:#c27000;--d4:#d92d20;--h1:#2dd4bf;--h2:#a9a8ff;--h3:#fbbf24}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--d1:#22a090;--d2:#7b79e0;--d3:#c47a10;--d4:#f97066}}
@@ -962,6 +980,7 @@ function advOverdue(r){
 }
 function renderBanner(){
   const el=$('#banner');if(!el)return;
+  if(el.parentNode!==document.body)document.body.appendChild(el);   /* keep it outside any transformed container so the fixed panel sticks to the screen edge */
   const d0=D[S.co];let n=0;SECS.forEach(s=>d0[s].forEach(r=>{if(r.sample)n++;}));
   let sampleHTML=n?'<div class="note"><span>Example rows from your payment sheet are loaded for this company, so you can see how it works.</span><button class="btn sm" data-act="clearsample">Clear example rows</button></div>':'';
   const today=todayStr();let parts=[],cur=null;
@@ -976,19 +995,51 @@ function renderBanner(){
       parts.push('<strong>'+esc(c.name)+':</strong> '+bits.join(', '));
     }
   });
-  let advHTML='';
+  const alerts=[];
   COS.forEach(c=>{
     const r=c.key===S.co&&R?R:calc(dataFor(c.key));
     const ov=advOverdue(r).sort((x,y)=>y.days-x.days);if(!ov.length)return;
     const seenPo=new Set(),uniq=ov.filter(x=>{const k=norm(x.g.po);if(seenPo.has(k))return false;seenPo.add(k);return true;});
     const items=uniq.map(x=>'<li><button type="button" class="lnk polink" data-act="openpi" data-po="'+esc(x.g.po)+'" title="Open this PI in PI Desk"><b>'+esc(x.g.po)+'</b></button> · day '+x.days+'<span>'+esc(cl(x.g))+(x.g.by?' · by '+esc(x.g.by):'')+'</span></li>').join('');
-    advHTML+='<div class="note due" role="status"><details class="advnote"><summary><span><strong>Advance not received'+(COS.length>1?' · '+esc(c.name):'')+'</strong> &nbsp;'+uniq.length+(uniq.length===1?' PI is':' PIs are')+' past '+ADV_DAYS+' working days</span><span class="cta">Show PIs</span></summary><ul>'+items+'</ul>'+(S.tab==='advances'?'':'<p style="margin:10px 0 0"><button class="btn sm" data-act="goto" data-tab="advances">Open Advance</button></p>')+'</details></div>';
+    alerts.push({id:'adv|'+c.key,sig:String(uniq.length),html:'<div class="note due" role="status"><details class="advnote"><summary><span><strong>Advance not received'+(COS.length>1?' · '+esc(c.name):'')+'</strong> &nbsp;'+uniq.length+(uniq.length===1?' PI is':' PIs are')+' past '+ADV_DAYS+' working days</span><span class="cta">Show PIs</span></summary><ul>'+items+'</ul>'+(S.tab==='advances'?'':'<p style="margin:10px 0 0"><button class="btn sm" data-act="goto" data-tab="advances">Open Advance</button></p>')+'</details></div>'});
   });
-  if(fyPending()){const py=fyStartNow()-1;advHTML+='<div class="note due" role="status"><span><strong>'+fyName(py)+' has ended.</strong> Save its backup to Google Drive.</span>'+(S.tab==='admin'?'':'<button class="btn sm" data-act="goto" data-tab="admin">Open backup</button>')+'</div>';}
-  sampleHTML=sampleHTML+advHTML;
-  if(!parts.length){el.innerHTML=sampleHTML;return;}
-  el.innerHTML=sampleHTML+'<div class="note due" role="status"><span>Payment due. '+parts.join(' &nbsp;·&nbsp; ')+'</span>'+(S.tab==='payments'?'':'<button class="btn sm" data-act="goto" data-tab="payments">View payments</button>')+'</div>';
+  if(fyPending()){const py=fyStartNow()-1;alerts.push({id:'fy',sig:String(py),html:'<div class="note due" role="status"><span><strong>'+fyName(py)+' has ended.</strong> Save its backup to Google Drive.</span>'+(S.tab==='admin'?'':'<button class="btn sm" data-act="goto" data-tab="admin">Open backup</button>')+'</div>'});}
+  if(n)alerts.unshift({id:'sample',sig:String(n),html:sampleHTML});
+  if(parts.length)alerts.push({id:'pay',sig:parts.join('|'),html:'<div class="note due" role="status"><span>Payment due. '+parts.join(' &nbsp;·&nbsp; ')+'</span>'+(S.tab==='payments'?'':'<button class="btn sm" data-act="goto" data-tab="payments">View payments</button>')+'</div>'});
+  paintAlerts(el,alerts);
 }
+/* ---------- notifications live in a left-side panel; each one can be hidden ---------- */
+let ALERT_OPEN=false;
+const ALERT_KEY=()=>'orderdesk:alerts:'+(ME?ME.id:'');
+const alertHidden=()=>{try{return JSON.parse(localStorage.getItem(ALERT_KEY())||'{}')||{};}catch(e){return {};}};
+const saveAlertHidden=o=>{try{localStorage.setItem(ALERT_KEY(),JSON.stringify(o));}catch(e){}};
+let ALERTS=[];
+function paintAlerts(el,alerts){
+  ALERTS=alerts;
+  const hid=alertHidden(),vis=alerts.filter(a=>hid[a.id]!==a.sig),nh=alerts.length-vis.length;
+  if(!alerts.length){el.innerHTML='';ALERT_OPEN=false;return;}
+  const label=vis.length?'Alerts, '+vis.length+' to review':'Alerts, none to review';
+  el.innerHTML='<button type="button" class="atab'+(vis.length?' has':'')+'" data-act="alerttoggle" aria-expanded="'+ALERT_OPEN+'" aria-controls="apanel" aria-label="'+label+'"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span>Alerts</span>'+(vis.length?'<b aria-hidden="true">'+vis.length+'</b>':'')+'</button>'+
+    '<aside id="apanel" class="apanel'+(ALERT_OPEN?' open':'')+'" aria-label="Alerts"><div class="ahead"><h2>Alerts</h2><button type="button" class="btn sm" data-act="alerttoggle" id="aclose">Hide panel</button></div>'+
+    (vis.length?vis.map(a=>'<div class="aitem">'+a.html+'<div class="ahide"><button type="button" class="btn sm" data-act="alerthide" data-id="'+esc(a.id)+'">Hide this alert</button></div></div>').join(''):'<p class="muted aempty">Nothing needs your attention right now.</p>')+
+    (nh?'<p class="afoot"><span>'+nh+' hidden alert'+(nh===1?'':'s')+'</span><button type="button" class="btn sm" data-act="alertshowall">Show them again</button></p>':'')+'</aside>';
+}
+function alertToggle(open){
+  ALERT_OPEN=open==null?!ALERT_OPEN:open;
+  const p=$('#apanel'),t=$('.atab');if(!p||!t)return;
+  p.classList.toggle('open',ALERT_OPEN);t.setAttribute('aria-expanded',ALERT_OPEN);
+  if(ALERT_OPEN){const c=$('#aclose');if(c)c.focus();}else t.focus();
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ALERT_OPEN)alertToggle(false);});
+document.addEventListener('click',e=>{
+  const a=e.target.closest&&e.target.closest('[data-act]');
+  if(!a){if(ALERT_OPEN&&e.target.closest&&!e.target.closest('#banner'))alertToggle(false);return;}
+  const act=a.dataset.act;
+  if(act==='alerttoggle')alertToggle();
+  else if(act==='alerthide'){const o=alertHidden(),al=ALERTS.find(x=>x.id===a.dataset.id);if(al){o[al.id]=al.sig;saveAlertHidden(o);}renderBanner();const t=$('#aclose');if(t&&ALERT_OPEN)t.focus();}
+  else if(act==='alertshowall'){saveAlertHidden({});renderBanner();}
+  else if(ALERT_OPEN&&(act==='goto'||act==='openpi'))alertToggle(false);
+});
 function reminderText(i){
   const c=i.c||{},co=COS.find(x=>x.key===S.co).name,today=todayStr();
   const dd=i.due?daysBetween(today,i.due):null;
