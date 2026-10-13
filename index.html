@@ -1034,7 +1034,7 @@ function buildPanel(){
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     '<input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
-    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button>':'')+
+    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
@@ -1312,6 +1312,7 @@ document.addEventListener('click',e=>{
   }
   else if(act==='tab'||act==='goto'){if(a.dataset.tab==='admin'&&!isAdmin())return;S.tab=a.dataset.tab;S.form=null;S.q='';S.filters={};S.sorts={};closeFilter();saveUI();renderTabs();buildPanel();}
   else if(act==='cloudimport'){cloudImport();}
+  else if(act==='cloudfile'){const f=$('#cloudFile');if(f)f.click();}
   else if(act==='pname'){if(isAdmin())showPiName(a.dataset.id);}
   else if(act==='fybk'){fyBackup(a.dataset.mode);}
   else if(act==='dclient'){S.dashClient=a.dataset.id;renderDash();window.scrollTo({top:0,behavior:'smooth'});}
@@ -2176,6 +2177,25 @@ async function cloudImport(){
     await cloudLoad();buildAll();toast('Uploaded '+rows.length+' entries to the cloud');
   }catch(e){if(!cloudGone(e))toast('Upload failed: '+e.message);}
 }
+
+function cloudImportFile(file){
+  if(!isAdmin())return;
+  const fr=new FileReader();
+  fr.onload=async()=>{
+    let j;try{j=JSON.parse(fr.result);if(!j||j.app!=='order-desk'||!j.data)throw new Error('bad');}catch(e){toast('That file is not an Order & Payment Desk backup. Use the Backup button of the old desk to make one.');return;}
+    const rows=[];
+    COS.forEach(c=>SECS.forEach(s=>{((j.data[c.key]&&j.data[c.key][s])||[]).forEach(r=>{if(r&&r.id)rows.push({company:c.key,section:s,id:String(r.id),data:r,created_by_name:r.createdByName||ME.user,by_pi:r.createdBy==='pi',owner_key:r.createdBy==='pi'&&r.createdByName!=='PI Generator'?(alnum(r.createdByName)||null):null});});}));
+    if(!rows.length){toast('This backup has no entries.');return;}
+    const per=COS.map(c=>c.name+': '+SECS.reduce((a,s)=>a+((j.data[c.key]&&j.data[c.key][s])||[]).length,0)).join('\n');
+    if(!confirm('Upload '+rows.length+' entries from this backup to the shared cloud?\n\n'+per+'\n\nEntries that already exist in the cloud are left as they are.'))return;
+    try{
+      for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
+      await cloudLoad();buildAll();toast('Uploaded '+rows.length+' entries to the cloud');
+    }catch(e){if(!cloudGone(e))toast('Upload failed: '+e.message);}
+  };
+  fr.readAsText(file);
+}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='cloudFile'&&e.target.files[0]){cloudImportFile(e.target.files[0]);e.target.value='';}});
 
 /* ---------- Excel-style column filters and sorting ---------- */
 S.filters={};S.sorts={};
