@@ -438,7 +438,7 @@ tbody tr:hover td{background:var(--head)}
 
 /* ---------- left-side alerts panel ---------- */
 #banner{position:static}
-.atab{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:80;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:96px;min-width:44px;padding:12px 8px;border:1px solid var(--line);border-left:0;border-radius:0 14px 14px 0;background:var(--surface);color:var(--ink);font:inherit;font-weight:700;font-size:13px;cursor:pointer;box-shadow:var(--shadow-lg)}
+.atab{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:80;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:96px;width:40px;min-width:40px;padding:12px 4px;border:1px solid var(--line);border-left:0;border-radius:0 14px 14px 0;background:var(--surface);color:var(--ink);font:inherit;font-weight:700;font-size:13px;cursor:pointer;box-shadow:var(--shadow-lg)}
 .atab span{writing-mode:vertical-rl;transform:rotate(180deg);letter-spacing:.04em}
 .atab b{min-width:22px;height:22px;padding:0 6px;border-radius:99px;display:inline-grid;place-items:center;font-size:12px;background:var(--bad);color:#fff}
 .atab.has{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
@@ -573,6 +573,34 @@ tbody tr:hover td{background:var(--head)}
 @media (max-width:1100px){.dtiles{grid-template-columns:repeat(2,minmax(0,1fr))}.dgrid{grid-template-columns:minmax(0,1fr)}.dhero-body{grid-template-columns:minmax(0,1fr)}.dring{justify-content:flex-start}}
 @media (max-width:640px){.dpick{flex-wrap:wrap}.dhero{padding:20px 18px;border-radius:20px}.dtiles{gap:10px}.dt{padding:12px;gap:10px;flex-direction:column;align-items:flex-start}.dhstats{grid-template-columns:repeat(2,minmax(0,auto))}.sumline{grid-template-columns:1fr}.dcard{padding:16px 16px}.dhero select{max-width:none;flex:1 1 100%}}
 @media print{.side,#banner,.toast,.pt,.bt,.skip,.dpick{display:none!important}.content{padding:0;max-width:none}.cwrap{max-height:none;overflow:visible}.wrap{display:block}body{background:#fff!important}.dcard,.dt,.dhero{break-inside:avoid}}
+/* ---------- one look for every page ---------- */
+.content h2{font-size:clamp(26px,2.6vw,32px);font-weight:800;letter-spacing:-.02em}
+.ph{flex-direction:row;align-items:flex-end;flex-wrap:wrap;gap:10px 20px;padding:2px 0}
+.ph>div:first-child{flex:1 1 320px;max-width:680px}
+.ph>.pt{width:auto;flex:0 0 auto;justify-content:flex-end}
+.ph p{font-size:14.5px;line-height:1.5}
+.pt .btn.primary{margin-left:0}
+.toolbar{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:0 14px;box-shadow:var(--shadow);color:var(--muted)}
+.toolbar:focus-within{border-color:var(--d2);box-shadow:0 0 0 3px color-mix(in srgb,var(--d2) 22%,transparent)}
+.toolbar input[type=search]{flex:1;border:0;background:transparent;box-shadow:none;outline:none;min-height:48px;max-width:none;font:inherit;font-size:15px;color:var(--ink)}
+#kpis.dtiles{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+#kpis.dtiles:empty{display:none}
+.block{margin-bottom:18px}
+.bh h3{font-size:16px;font-weight:700;letter-spacing:-.005em}
+#listHost .tw{max-height:min(74vh,860px);border-radius:18px}
+th{background:var(--head);box-shadow:0 1px 0 var(--line)}
+tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--head) 45%,transparent)}
+tbody tr:hover td{background:color-mix(in srgb,var(--d2) 8%,var(--surface))}
+td.act{white-space:nowrap}
+td.act .lnk{padding:4px 11px;margin-left:6px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;background:var(--surface)}
+td.act .lnk.del{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+@media (min-width:1100px) and (max-width:1279px){.content{padding-left:52px}}
+#panel>*+*{margin-top:16px}
+#panel>.ph{margin-top:8px}
+#kpis.dtiles+#panel{margin-top:20px}
+.toolbar{max-width:560px}
+@media (max-width:1099px){.atab{top:auto;bottom:16px;left:12px;transform:none;flex-direction:row;min-height:44px;width:auto;padding:8px 14px;border:1px solid var(--line);border-radius:99px}.atab span{writing-mode:horizontal-tb;transform:none}}
+@media (max-width:640px){.ph>.pt{width:100%;justify-content:flex-start}#kpis.dtiles{grid-template-columns:minmax(0,1fr);gap:8px}#kpis.dtiles .dt{flex-direction:row;align-items:center;padding:10px 14px}#kpis.dtiles .dt .ic{width:38px;height:38px}}
 </style>
 <title>Order &amp; Payment Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -944,13 +972,19 @@ function renderCos(){
   $('#cos').innerHTML=COS.map(c=>'<button class="co" data-act="co" data-co="'+c.key+'" aria-label="'+esc(c.name)+'" aria-pressed="'+(c.key===S.co)+'">'+(LOGOS[c.key]?'<img src="'+LOGOS[c.key]+'" alt="">':esc(c.name))+'</button>').join('');
 }
 function renderKpis(){
-  const t=R.t;
-  const k=(l,v,s)=>'<div class="kpi"><div class="l">'+l+'</div><div class="v">'+esc(v)+'</div><div class="s">'+esc(s)+'</div></div>';
-  $('#kpis').innerHTML=
-    k('Advance received',inr(t.advReceived),t.poCount+(t.poCount===1?' PO':' POs')+' with advance')+
-    k('Advance pending',inr(t.advPending),'required minus received')+
-    k('Outstanding receivable',inr(t.outstanding),t.overdue+(t.overdue===1?' invoice':' invoices')+' overdue')+
-    k('Yet to dispatch',qty(t.toDispatch)+' units',qty(t.ready)+' invoiced, LR not logged');
+  const t=R.t,el=$('#kpis');if(!el)return;
+  const tab=S.tab;
+  const tile=(cls,ic,l,v,sb)=>'<div class="dt '+cls+'"><div class="ic" aria-hidden="true">'+DI[ic]+'</div><div><div class="l">'+l+'</div><div class="v">'+esc(v)+'</div><div class="s">'+esc(sb)+'</div></div></div>';
+  const recv=R.inv.reduce((a,i)=>a+(i.paid||0),0),late=advOverdue(R).length,open=R.inv.filter(i=>i.pend>TOL).length;
+  const sets={
+    advances:[tile('t-ok','money','Advance received',inr(t.advReceived),t.poCount+(t.poCount===1?' PO':' POs')+' with advance'),tile('t-warn','clock','Advance still pending',inr(t.advPending),'required minus received'),tile(late?'t-bad':'','alert','Advance late',late+(late===1?' PI':' PIs'),'not paid within '+ADV_DAYS+' working days')],
+    invoices:[tile('t-ind','money','Invoices raised',qty(R.inv.length),open+' still have a balance'),tile('t-warn','clock','Outstanding',inr(t.outstanding),'to be received'),tile(t.overdue?'t-bad':'','alert','Overdue',t.overdue+(t.overdue===1?' invoice':' invoices'),'past the due date')],
+    payments:[tile('t-warn','clock','Outstanding',inr(t.outstanding),open+' open invoice'+(open===1?'':'s')),tile(t.overdue?'t-bad':'','alert','Overdue',t.overdue+(t.overdue===1?' invoice':' invoices'),'past the due date'),tile('t-ok','money','Received so far',inr(recv),'against invoices')],
+    dispatches:[tile('t-ind','truck','Yet to dispatch',qty(t.toDispatch)+' units','on invoiced POs'),tile('t-warn','clock','Ready to ship',qty(t.ready)+' units','invoiced, LR not logged'),tile('','truck','Open POs',qty(t.openPOs),'with quantity left')]
+  };
+  el.className='dtiles';
+  el.innerHTML=(sets[tab]||[]).join('');
+  el.style.display=sets[tab]?'':'none';
 }
 const TIP={
   dashboard:n=>n+' client'+(n===1?'':'s')+'. Products, payments, dispatch and dues in one place.',
@@ -1083,13 +1117,12 @@ function buildAll(){recompute();renderCos();renderKpis();renderTabs();renderBann
 
 function buildPanel(){
   const t=S.tab;
-  $('#kpis').style.display=t==='dashboard'?'none':'';
+  renderKpis();
   if(t==='dashboard'){$('#panel').innerHTML='<div id="dashHost"></div>';renderDash();return;}
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
-    '<input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn primary" data-act="xlfile" title="Upload the old Google Sheet, downloaded as Excel (.xlsx)">Import from Excel</button><input type="file" id="xlFile" accept=".xlsx,.xls" hidden>':'')+
-    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div id="listHost"></div>';
+    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
 }
