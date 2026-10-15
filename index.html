@@ -638,6 +638,7 @@ td.act .lnk.del{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
 .ledsheet td.n{text-align:right;font-variant-numeric:tabular-nums}
 .ledsheet td.mono{font-family:var(--mono);font-size:12.5px}
 .ledsheet tfoot td{font-weight:800;background:var(--lh);border-bottom:0;font-variant-numeric:tabular-nums}
+.ladv{margin:0;padding:0 28px 12px;font-size:13px;color:var(--lm)}.ladv b{color:var(--lk)}
 .lempty{text-align:center;padding:26px;color:var(--lm)}
 .lchip{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:99px;background:var(--lh);color:var(--lm)}
 .lchip.bad{background:#fee4e2;color:var(--lb)}.lchip.ok{background:#d1fadf;color:var(--lo)}
@@ -649,14 +650,14 @@ td.act .lnk.del{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
 .lfoot{padding:16px 28px 22px;display:grid;gap:10px}
 .lfoot p{margin:4px 0 0;font-size:13px;line-height:1.55}
 .lfoot .lnote{color:var(--lm);font-size:12px}
-@media (max-width:900px){.ledgrid{grid-template-columns:minmax(0,1fr)}.lhead,.lparty,.lsum,.ltw,.lage,.lfoot{padding-left:16px;padding-right:16px}.lagegrid{grid-template-columns:repeat(2,minmax(0,1fr))}.ledbtn{margin-left:0}}
+@media (max-width:900px){.ledgrid{grid-template-columns:minmax(0,1fr)}.lhead,.lparty,.lsum,.ltw,.lage,.lfoot,.ladv{padding-left:16px;padding-right:16px}.lagegrid{grid-template-columns:repeat(2,minmax(0,1fr))}.ledbtn{margin-left:0}}
 @media print{
   .ledtools,#kpis,.ph,.toolbar,.atab,.apanel{display:none!important}
   .ledsheet{border:0;border-radius:0;box-shadow:none}
   .ltw{overflow:visible;padding:0 8px}
   .ledsheet table{min-width:0;font-size:10.5px}
   .ledsheet td,.ledsheet th{padding:5px 6px;white-space:normal}
-  .lhead,.lparty,.lsum,.lage,.lfoot{padding-left:8px;padding-right:8px}
+  .lhead,.lparty,.lsum,.lage,.lfoot,.ladv{padding-left:8px;padding-right:8px}
   .ledsheet tr{break-inside:avoid}
   .lchip{white-space:nowrap}
 }
@@ -2538,10 +2539,12 @@ function ledData(cid){
     const od=i.pend>TOL&&i.due?daysBetween(i.due,today):0;
     return {i:i,od:od>0?od:0,run:run};
   });
+  const gs=[...R.groups.values()].filter(g=>g.c&&g.c.id===cid&&g.hasAdv);
+  const advRec=gs.reduce((a,g)=>a+g.received,0),advUsed=gs.reduce((a,g)=>a+g.adjusted,0),advLeft=gs.reduce((a,g)=>a+Math.max(0,g.received-g.adjusted),0);
   const sum=f=>list.reduce((a,r)=>a+f(r.i),0);
   const bucket=d=>d<=0?0:d<=30?1:d<=60?2:d<=90?3:4;
   const aging=[0,0,0,0,0];list.forEach(r=>{if(r.i.pend>TOL)aging[bucket(r.od)]+=r.i.pend;});
-  return {c:c,today:today,list:list,all:all,total:sum(i=>i.total),adj:sum(i=>i.adj),paid:sum(i=>Math.min(i.paid,i.net)),balance:sum(i=>i.pend),overdue:list.filter(r=>r.od>0).reduce((a,r)=>a+r.i.pend,0),aging:aging};
+  return {advRec:advRec,advUsed:advUsed,advLeft:advLeft,c:c,today:today,list:list,all:all,total:sum(i=>i.total),adj:sum(i=>i.adj),paid:sum(i=>Math.min(i.paid,i.net)),balance:sum(i=>i.pend),overdue:list.filter(r=>r.od>0).reduce((a,r)=>a+r.i.pend,0),aging:aging};
 }
 const LED_AGE=['Not yet due','1–30 days','31–60 days','61–90 days','Over 90 days'];
 function ledMessage(L){
@@ -2565,8 +2568,8 @@ function ledSheetHTML(L){
   return '<article class="ledsheet" id="ledSheet" aria-label="Statement of account">'+
     '<header class="lhead"><div><div class="leb">Statement of account</div><h3>'+esc(co)+'</h3></div><div class="lasof"><span>As on</span><b>'+fd(L.today)+'</b></div></header>'+
     '<div class="lparty"><div class="leb">Party</div><h4>'+esc(c.name)+'</h4>'+(meta.length?'<p>'+meta.map(esc).join(' · ')+'</p>':'')+'</div>'+
-    '<div class="lsum"><div><span>Total invoiced</span><b>'+inr(L.total)+'</b></div><div><span>Advance adjusted</span><b>'+inr(L.adj)+'</b></div><div><span>Received</span><b>'+inr(L.paid)+'</b></div><div class="due"><span>Balance due</span><b>'+inr(L.balance)+'</b></div>'+(L.overdue>TOL?'<div class="od"><span>Of which overdue</span><b>'+inr(L.overdue)+'</b></div>':'')+'</div>'+
-    '<div class="ltw"><table><thead><tr>'+th('Date')+th('Invoice no.')+th('PO / PI')+th('Product')+th('Qty',1)+th('Invoice amount (₹)',1)+th('Advance adjusted (₹)',1)+th('Received (₹)',1)+th('Balance (₹)',1)+th('Due date')+th('Status')+th('Running balance (₹)',1)+'</tr></thead><tbody>'+body+'</tbody>'+
+    '<div class="lsum"><div><span>Total invoiced</span><b>'+inr(L.total)+'</b></div><div><span>Advance adjusted'+(S.ledAll?'':' (listed invoices)')+'</span><b>'+inr(L.adj)+'</b></div><div><span>Received</span><b>'+inr(L.paid)+'</b></div><div class="due"><span>Balance due</span><b>'+inr(L.balance)+'</b></div>'+(L.overdue>TOL?'<div class="od"><span>Of which overdue</span><b>'+inr(L.overdue)+'</b></div>':'')+'</div>'+
+    (L.advRec>TOL?'<p class="ladv"><b>Advance on your POs:</b> '+inr(L.advRec)+' received, '+inr(L.advUsed)+' already adjusted in invoices'+(L.advUsed-L.adj>TOL?' ('+inr(L.advUsed-L.adj)+' of it in invoices already paid, not listed below)':'')+(L.advLeft>TOL?', '+inr(L.advLeft)+' still to be adjusted.':'.')+'</p>':'')+'<div class="ltw"><table><thead><tr>'+th('Date')+th('Invoice no.')+th('PO / PI')+th('Product')+th('Qty',1)+th('Invoice amount (₹)',1)+th('Advance adjusted (₹)',1)+th('Received (₹)',1)+th('Balance (₹)',1)+th('Due date')+th('Status')+th('Running balance (₹)',1)+'</tr></thead><tbody>'+body+'</tbody>'+
     (L.list.length?'<tfoot><tr><td colspan="5">Total</td><td class="n">'+nf2.format(L.total)+'</td><td class="n">'+nf2.format(L.adj)+'</td><td class="n">'+nf2.format(L.paid)+'</td><td class="n">'+nf2.format(L.balance)+'</td><td colspan="3"></td></tr></tfoot>':'')+'</table></div>'+
     (L.balance>TOL?'<div class="lage"><div class="leb">Ageing of balance due</div><div class="lagegrid">'+L.aging.map((v,k)=>'<div class="'+(k>0&&v>TOL?'hot':'')+'"><span>'+LED_AGE[k]+'</span><b>'+nf2.format(v)+'</b></div>').join('')+'</div></div>':'')+
     '<footer class="lfoot"><div id="ledBankOut">'+(bank?'<div class="leb">Payment details</div><p>'+esc(bank).replace(/\n/g,'<br>')+'</p>':'')+'</div><p class="lnote">This is a computer-generated statement. Please ignore it if the payment has already been made. Kindly share the transaction details (UTR) after payment.</p></footer></article>';
