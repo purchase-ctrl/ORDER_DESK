@@ -2644,7 +2644,8 @@ document.addEventListener('click',e=>{
 S.filters={};S.sorts={};
 const BLANK='(Blanks)';
 function colText(c,r){const v=c.t(r);if(v==null||v==='')return BLANK;return String(c.fmt?c.fmt(v):v);}
-function rowMatchesQ(b,r){const q=S.q.toLowerCase();return b.cols.some(c=>String(c.t(r)==null?'':c.t(r)).toLowerCase().includes(q)||colText(c,r).toLowerCase().includes(q));}
+const qn=x=>String(x==null?'':x).toLowerCase().replace(/[\s\u00a0\u200b]+/g,' ').trim(),qz=x=>qn(x).replace(/ /g,'');
+function rowMatchesQ(b,r){const q=qn(S.q),z=qz(S.q);if(!q)return true;return b.cols.some(c=>{const a=c.t(r),t=colText(c,r);return qn(a).includes(q)||qn(t).includes(q)||qz(a).includes(z)||qz(t).includes(z);});}
 function passCols(b,r,skip){const f=S.filters[b.id];if(!f)return true;for(const k in f){const ci=+k;if(ci===skip)continue;if(!f[k].has(colText(b.cols[ci],r)))return false;}return true;}
 function filtered(b){
   let rows=b.rows;
