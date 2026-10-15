@@ -811,10 +811,20 @@ async function del(sec,id){
 }
 
 /* ---------- calculations ---------- */
+/* A logged-in user (not the admin) only sees entries whose client has both a name and a brand in their Client / Brand tab. */
+const limitedUser=()=>{try{return typeof CLOUD!=='undefined'&&CLOUD&&typeof ME!=='undefined'&&!!ME&&!isAdmin();}catch(e){return false;}};
+const clientShown=c=>!!c&&(!limitedUser()||!!(String(c.name||'').trim()&&String(c.brand||'').trim()));
 function dataFor(key,over){
   const d=D[key];
   const o={clients:d.clients,products:d.products,advances:[...d.advances.values()],invoices:[...d.invoices.values()],payments:[...d.payments.values()],dispatches:[...d.dispatches.values()]};
   if(over){o[over.sec]=o[over.sec].filter(r=>r.id!==over.row.id);o[over.sec].push(over.row);}
+  if(limitedUser()){
+    const okP=new Set([...d.products.values()].filter(p=>clientShown(d.clients.get(p.clientId))).map(p=>p.id));
+    const P=new Map([...d.products].filter(([id])=>okP.has(id)));
+    o.products=P;o.advances=o.advances.filter(r=>okP.has(r.productId));o.dispatches=o.dispatches.filter(r=>okP.has(r.productId));
+    const invOk=new Set(o.invoices.filter(r=>okP.has(r.productId)).map(r=>r.id));
+    o.invoices=o.invoices.filter(r=>invOk.has(r.id));o.payments=o.payments.filter(r=>invOk.has(r.invoiceId));
+  }
   return o;
 }
 function calc(d){
@@ -882,7 +892,9 @@ function calc(d){
     openPOs:gl.filter(g=>g.invQty>0&&g.pendDisp>0).length,
     poCount:gl.filter(g=>g.hasAdv).length
   };
-  return {groups:gl,advRows:advRows,inv:inv,pay:pay,dis:dis,t:t};
+  const refMap=new Map();adv.forEach(a=>{const rp=String(a.refPo||'').trim(),k=String(a.po||'').trim().toLowerCase();if(rp&&k&&!refMap.has(k))refMap.set(k,rp);});
+  groups.forEach(g=>{g.refPo=refMap.get(String(g.po||'').trim().toLowerCase())||'';});
+  return {groups:gl,advRows:advRows,inv:inv,pay:pay,dis:dis,t:t,refMap:refMap};
 }
 function recompute(){R=calc(dataFor(S.co));}
 
@@ -900,7 +912,7 @@ function blocks(){
     /* x:1 columns stay in search and CSV export but are not drawn in the table, so it fits without sideways scrolling */
     return [{id:'clients',name:'clients',title:'Clients',edit:'clients',tight:1,rows:[...d.clients.values()].sort(byName),
       cols:[{h:'Client',t:r=>r.name,r:r=>'<span class="who"><span class="av" aria-hidden="true">'+esc(ini(r.name))+'</span><span><strong>'+esc(r.name)+'</strong>'+(r.city?'<span class="sub">'+esc(r.city)+'</span>':'')+'</span></span>'},
-        {h:'Brand',t:r=>r.brand,r:r=>r.brand?chip('br',r.brand):'<span class="dim">No brand</span>'},
+        {h:'Brand',t:r=>r.brand,r:r=>r.brand?chip('br',r.brand):(limitedUser()?'<span class="chip warn">Add a brand to show entries</span>':'<span class="dim">No brand</span>')},
         {h:'GSTIN',t:r=>r.gstin,cls:'mono'},
         {h:'Contact',t:r=>r.contact,r:r=>(r.contact||r.phone)?(r.contact?'<strong>'+esc(r.contact)+'</strong>':'')+(r.phone?'<span class="sub">'+esc(r.phone)+'</span>':''):'<span class="dim">—</span>'},
         {h:'Products',t:r=>cnt(r.id),r:r=>{const n=cnt(r.id);return n?chip('ok',n+(n===1?' product':' products')):chip('n0','No products');}},
@@ -920,14 +932,14 @@ function blocks(){
     const chipAdv=g=>g.required<=0?chip('n0','No advance set'):(g.pending<=TOL?(g.excess>TOL?chip('warn','Excess '+inr(g.excess)):chip('ok','Complete')):(g.piDate&&workDaysSince(g.piDate)>ADV_DAYS?chip('bad','Overdue · day '+workDaysSince(g.piDate)):chip('warn','Pending')));
     return [
       {id:'adv-summary',name:'advance position by PO',title:'Advance position by PO',rows:R.groups.filter(g=>g.hasAdv).sort((a,b)=>cl(a).localeCompare(cl(b))||pr(a).localeCompare(pr(b))||a.po.localeCompare(b.po)),
-        cols:[{h:'PI date',t:r=>r.piDate||'',fmt:fd,s:1},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
+        cols:[{h:'PI date',t:r=>r.piDate||'',fmt:fd,s:1},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
           {h:'Order value',t:r=>r.orderValue,cls:'n',fmt:inr},{h:'Created by',t:r=>r.by||'',r:r=>r.by?'<span class="chip br">'+esc(r.by)+'</span>':'<span class="dim">—</span>'},{h:'Advance required',t:r=>r.required,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.received,cls:'n',fmt:inr,s:1},
           {h:'Pending',t:r=>r.pending,cls:'n',fmt:inr,s:1},{h:'Received %',t:r=>r.recvPct,cls:'n',fmt:pct},
           {h:'Adjusted in invoices',t:r=>r.adjusted,cls:'n',fmt:inr,s:1},{h:'Not yet adjusted',t:r=>r.unadj,cls:'n',fmt:inr,s:1},
           {h:'Status',t:r=>r.required<=0?'No advance set':(r.pending<=TOL?(r.excess>TOL?'Excess':'Complete'):(r.piDate&&workDaysSince(r.piDate)>ADV_DAYS?'Overdue':'Pending')),r:chipAdv}],
         empty:['No advance recorded','Once you log advance received, each PO shows what is required, received and still pending here.']},
       {id:'adv-stmt',name:'advance received against PI',title:'Advance received against PI',edit:'advances',search:1,rows:R.advRows.filter(r=>(+r.received||0)>0.004).sort((a,b)=>String(b.date).localeCompare(String(a.date))),
-        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'PI date',t:r=>(r.g&&r.g.piDate)||'',fmt:fd},
+        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PI date',t:r=>(r.g&&r.g.piDate)||'',fmt:fd},
           {h:'Advance requested',t:r=>r.req,cls:'n',fmt:inr,s:1},{h:'Advance received',t:r=>+r.received||0,cls:'n',fmt:inr,s:1},
           {h:'UTR details',t:r=>r.utr||(String(r.note||'').match(/\(ref ([^)]+)\)/)||[])[1]||'',cls:'mono wrapc'},
           {h:'Pending advance',t:r=>r.pendPct==null?'':r.pendPct,
@@ -952,13 +964,13 @@ function blocks(){
     const stChip=r=>{if(r.pend<=TOL)return chip('ok','Paid');const dd=r.due?daysBetween(today,r.due):null;if(dd!=null&&dd<0)return chip('bad',(-dd)+'d overdue');return chip(r.paid>0?'warn':'n0',r.paid>0?'Part paid':'Unpaid');};
     return [{id:'pay-status',name:'payment status',title:'Invoice payment status',rows:open,
       extra:'<label class="chk"><input type="checkbox" id="showdone"'+(S.showDone?' checked':'')+'> Show paid invoices</label>',
-      cols:[{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},
+      cols:[{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},
         {h:'Due date',t:r=>r.due,fmt:fd},{h:'Amount due',t:r=>r.net,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.paid,cls:'n',fmt:inr,s:1},{h:'Pending',t:r=>r.pend,cls:'n',fmt:inr,s:1},
         {h:'Status',t:r=>r.pend<=TOL?'Paid':(r.due&&daysBetween(today,r.due)<0?'Overdue':(r.paid>0?'Part paid':'Unpaid')),r:stChip},
         {h:'',t:r=>'',r:r=>'<button class="btn sm" data-act="payfor" data-id="'+esc(r.id)+'">Record payment</button> <button class="btn sm" data-act="remind" data-id="'+esc(r.id)+'">Email reminder</button>'}],
       empty:['No pending payments','Every invoice is paid, or no invoice has been raised yet. Add invoices in Daily Invoicing.']},
      {id:'pay-log',name:'payment log',title:'Payments received',edit:'payments',search:1,rows:R.pay,
-      cols:[{h:'Date received',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.i?r.i.invNo:'(removed invoice)',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.i?r.i.po:'',r:r=>polink((r=>r.i?r.i.po:'')(r)),cls:'mono'},
+      cols:[{h:'Date received',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.i?r.i.invNo:'(removed invoice)',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.i?r.i.po:'',r:r=>polink((r=>r.i?r.i.po:'')(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.i?r.i.po:''),cls:'mono'},
         {h:'Amount received',t:r=>r.amt,cls:'n',fmt:inr,s:1},{h:'Mode',t:r=>r.mode},{h:'Reference',t:r=>r.ref,cls:'mono'},
         {h:'Pending on invoice after this',t:r=>r.pendAfter,cls:'n',fmt:inr},{h:'Note',t:r=>r.note,cls:'wrapc'}],
       empty:['No payments recorded','Use Record payment on an invoice above. Each payment reduces that invoice’s pending amount.']}];
@@ -966,7 +978,7 @@ function blocks(){
   if(t==='invoices'){
     return [{id:'invoices',name:'invoices',title:'Invoices',edit:'invoices',search:1,rows:R.inv,
       cols:[{h:'Invoice date',t:r=>r.date,fmt:fd},{h:'Invoice no.',t:r=>r.invNo,r:r=>'<strong>'+esc(r.invNo)+'</strong>',cls:'mono'},{h:'Client',t:cl},{h:'Product',t:pr},
-        {h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Invoice qty',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'PO qty',t:r=>r.g.poQty||null,cls:'n',fmt:qty},
+        {h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'Invoice qty',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'PO qty',t:r=>r.g.poQty||null,cls:'n',fmt:qty},
         {h:'Remaining qty',t:r=>r.remain,cls:'n',fmt:qty,r:r=>r.remain==null?'—':(r.remain<0?esc(qty(r.remain))+' '+chip('bad','Over PO'):esc(qty(r.remain)))},
         {h:'Non-GST amount',t:r=>r.nonGst,cls:'n',fmt:inr,s:1},{h:'Freight + dev. charges',t:r=>r.extra,cls:'n',fmt:inr,s:1},{h:'GST 18%',t:r=>r.gst,cls:'n',fmt:inr,s:1},
         {h:'Invoice total',t:r=>r.total,cls:'n',fmt:inr,s:1},{h:'Advance adjusted',t:r=>r.adj,cls:'n',fmt:inr,s:1},{h:'Advance left on PO',t:r=>r.advLeft,cls:'n',fmt:inr},
@@ -982,13 +994,13 @@ function blocks(){
   return [
     {id:'disp-summary',name:'pending dispatch',title:'Pending dispatch by PO',rows:gl,
       extra:'<label class="chk"><input type="checkbox" id="showdone"'+(S.showDone?' checked':'')+'> Show completed POs</label>',
-      cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'PO qty',t:r=>r.poQty||null,cls:'n',fmt:qty},{h:'Invoiced',t:r=>r.invQty,cls:'n',fmt:qty},
+      cols:[{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PO qty',t:r=>r.poQty||null,cls:'n',fmt:qty},{h:'Invoiced',t:r=>r.invQty,cls:'n',fmt:qty},
         {h:'Dispatched',t:r=>r.dispQty,cls:'n',fmt:qty},{h:'Pending dispatch',t:r=>r.pendDisp,cls:'n',fmt:qty,s:1},{h:'Invoiced, LR not logged',t:r=>r.ready,cls:'n',fmt:qty,s:1},
         {h:'Dispatched share',t:r=>r.poQty>0?r.dispQty/r.poQty*100:null,r:r=>{if(!(r.poQty>0))return '—';const p=Math.min(100,r.dispQty/r.poQty*100);return '<span class="bar"><i style="width:'+p+'%"></i></span>'+esc(pct(r.dispQty/r.poQty*100));}},
         {h:'Status',t:r=>r.poQty<=0?'PO qty not recorded':(r.dispQty>r.poQty?'Over-dispatched':(done(r)?'Complete':(r.ready>0?'Invoiced, add LR':'Awaiting invoice'))),r:chipD}],
       empty:['Nothing pending','A PO appears here only after an invoice has been raised against it. Add invoices in Daily Invoicing first, or every invoiced PO has already been dispatched.']},
     {id:'disp-log',name:'dispatch log',title:'Dispatch log',edit:'dispatches',search:1,rows:R.dis,
-      cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Invoice no.',t:r=>r.invNo,cls:'mono'},
+      cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'Invoice no.',t:r=>r.invNo,cls:'mono'},
         {h:'Qty dispatched',t:r=>r.q,cls:'n',fmt:qty,s:1},{h:'Transporter',t:r=>r.transporter},{h:'LR / AWB no.',t:r=>r.lr,cls:'mono'},
         {h:'Status',t:r=>r.status,r:r=>chip(r.status==='Delivered'?'ok':'warn',r.status||'Dispatched')}],
       empty:['No dispatches logged','Log each dispatch with its transporter and LR number. Pending quantities above update as you go.']}
@@ -1059,8 +1071,8 @@ const TIP={
   admin:n=>n+' user'+(n===1?'':'s')+'. Manage users and every entry.'
 };
 function renderTabs(){
-  const d=D[S.co];
-  const cnt={dashboard:d.clients.size,clients:d.clients.size,products:d.products.size,advances:d.advances.size,invoices:d.invoices.size,payments:R.inv.filter(i=>i.pend>TOL).length,ledger:new Set(R.inv.filter(i=>i.pend>TOL&&i.c).map(i=>i.c.id)).size,dispatches:R.t.openPOs};
+  const d=dataFor(S.co);
+  const cnt={dashboard:d.clients.size,clients:d.clients.size,products:d.products.size,advances:d.advances.length,invoices:d.invoices.length,payments:R.inv.filter(i=>i.pend>TOL).length,ledger:new Set(R.inv.filter(i=>i.pend>TOL&&i.c).map(i=>i.c.id)).size,dispatches:R.t.openPOs};
   const tl=['dashboard','clients','products','advances','invoices','payments','ledger','dispatches'].concat(isAdmin()?['admin']:[]);cnt.admin=USERS.size;
   $('#tabs').innerHTML=tl.map(s=>'<button class="tab" role="tab" data-act="tab" data-tab="'+s+'" aria-selected="'+(s===S.tab)+'"><span class="row">'+TLAB[s]+'<span class="c">'+cnt[s]+'</span></span><span class="dt"><span>'+esc(TIP[s](cnt[s]))+'</span></span></button>').join('');
 }
@@ -1184,6 +1196,7 @@ function buildPanel(){
   if(t==='ledger'){$('#panel').innerHTML='<div class="ph"><div><h2>Ledger</h2><p class="muted">One party at a time, invoice by invoice. Check it, save it as a PDF and send it to ask for payment.</p></div></div><div id="ledHost"></div>';renderLedger();return;}
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
+    (t==='payments'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against invoices">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn primary" data-act="xlfile" title="Upload the old Google Sheet, downloaded as Excel (.xlsx)">Import from Excel</button><input type="file" id="xlFile" accept=".xlsx,.xls" hidden>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
@@ -1220,7 +1233,7 @@ const FORMS={
       fld('p_adv','Advance (% of final cost) *','number',advPctOf(r)==null?'':Math.round(advPctOf(r)*100)/100,NUM,1)+
       fld('p_terms','Payment terms (days)','number',r.terms==null?30:r.terms,'inputmode="numeric" step="1" min="0"'));},
   advances:r=>{r=r||{};return wrapForm(r.id?'Edit advance entry':'New advance received',
-    chainHTML(r)+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
+    chainHTML(r)+fld('a_refpo','Reference PO number','text',r.refPo||'','autocomplete="off" placeholder="Buyer\'s PO no."')+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
     fld('a_rate','PO rate (₹ per unit) *','number',r.poRate==null?'':r.poRate,NUM)+fld('a_recv','Advance received (₹) *','number',r.received==null?'':r.received,NUM)+
     area('a_note','Note',r.note),true);},
   invoices:r=>{r=r||{};return wrapForm(r.id?'Edit invoice':'New invoice',
@@ -1296,7 +1309,7 @@ const PREV={
   advances:()=>{
     const el=$('#prev'),pid=val('f_product'),po=val('f_po'),pq=num('a_qty');
     if(!pid||!po||!pq){el.innerHTML='<span class="muted">Pick the product, then enter the PO number and quantity to see the advance position.</span>';return;}
-    const row={id:draftId(),date:val('a_date')||todayStr(),productId:pid,po:po,poQty:pq,poRate:num('a_rate'),received:num('a_recv'),note:''};
+    const row={id:draftId(),date:val('a_date')||todayStr(),productId:pid,po:po,poQty:pq,poRate:num('a_rate'),received:num('a_recv'),refPo:val('a_refpo'),note:''};
     const g=findGroup(sim('advances',row),po,pid);
     if(!g||g.advUnit<=0){el.innerHTML='<span class="muted">This product has no advance % set. Edit the product first.</span>';return;}
     el.innerHTML=pv('Advance required',inr(g.required))+pv('Received incl. this entry',inr(g.received))+pv('Still pending',inr(g.pending))+(g.excess>TOL?pv('Excess received',inr(g.excess)):'');
@@ -1399,7 +1412,7 @@ function readForm(sec){
     if(!(num('a_recv')>0))return {err:'Enter the advance received.'};
     const dupA=[...D[S.co].advances.values()].some(r=>r.id!==id&&r.productId===pid&&norm(r.po)===norm(po)&&(r.date||'')===val('a_date')&&Math.abs((+r.received||0)-num('a_recv'))<0.005);
     if(dupA)return {err:'This advance is already entered (same PI / PO, date and amount).'};
-    return {row:{id:id,date:val('a_date'),productId:pid,po:po,poQty:num('a_qty'),poRate:num('a_rate'),received:num('a_recv'),note:val('a_note')}};
+    return {row:{id:id,date:val('a_date'),productId:pid,po:po,poQty:num('a_qty'),poRate:num('a_rate'),received:num('a_recv'),refPo:val('a_refpo'),note:val('a_note')}};
   }
   if(sec==='invoices'){
     const no=val('i_no');
@@ -1736,14 +1749,37 @@ function piCo(c){c=String(c||'').toLowerCase();if(/cosm/.test(c))return 'scp';if
 function piSeen(){try{return new Set(JSON.parse(localStorage.getItem(PI_SEEN_KEY)||'[]'));}catch(e){return new Set();}}
 function piSave(set){try{localStorage.setItem(PI_SEEN_KEY,JSON.stringify([...set]));}catch(e){}}
 const piSlug=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,'').slice(0,40);
+/* Cloud mode: copy each PI's Reference PO number onto the advance entries made from it (only where the entry has none).
+   Reads the PIs this login is allowed to see, so people only ever get their own PIs' reference numbers. */
+async function cloudFillRefPo(){
+  let n=0;
+  try{
+    const pis=await sbRest('GET','pis?select=pi_number,ref_po&ref_po=not.is.null&limit=1000');
+    const m=new Map();(pis||[]).forEach(p=>{const rp=String(p.ref_po||'').trim(),k=norm(p.pi_number);if(rp&&k)m.set(k,rp);});
+    if(!m.size)return 0;
+    for(const c of COS){
+      for(const a of D[c.key].advances.values()){
+        if(a.createdBy!=='pi'||String(a.refPo||'').trim())continue;
+        const rp=m.get(norm(a.po));if(!rp)continue;
+        const upd=Object.assign({},a,{refPo:rp});
+        try{await sbRest('PATCH','od_records?company=eq.'+c.key+'&section=eq.advances&id=eq.'+encodeURIComponent(a.id),{data:upd},'return=minimal');D[c.key].advances.set(a.id,upd);n++;}catch(e){}
+      }
+    }
+  }catch(e){/* PI Desk has no ref_po column or the PIs are not readable: skip quietly */}
+  return n;
+}
 async function syncPI(manual){
   if(CLOUD){
     /* In cloud mode the database does the sync and stamps each row with the PI creator, so users only see their own PIs. */
     if(!ME||piBusy)return;piBusy=true;
     try{
       const r=await sbRest('POST','rpc/od_sync_pis',{});
-      await cloudLoad();refresh();
+      await cloudLoad();
+      const nrp=await cloudFillRefPo();
+      refresh();
       const n=r?(+r.clients||0)+(+r.products||0)+(+r.advances||0):0;
+      if(nrp)toast('PI sync: '+nrp+' reference PO(s) filled'+(n?' · '+n+' new entr'+(n===1?'y':'ies'):''));
+      else
       if(n)toast('PI sync: '+(r.clients||0)+' new client(s), '+(r.products||0)+' new product(s), '+(r.advances||0)+' advance entr'+((r.advances||0)===1?'y':'ies'));
       else if(manual)toast('PI sync: nothing new');
     }catch(e){if(!cloudGone(e)&&manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
@@ -1754,12 +1790,13 @@ async function syncPI(manual){
   try{
     const piGet=cols=>fetch(PI_URL+'/rest/v1/pis?select='+cols+'&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
     const BASE='id,created_by,company,pi_number,buyer_name,buyer_contact,buyer_phone,buyer_email,buyer_gst,buyer_address,pi_date,items';
-    let res=await piGet(BASE+',brand_name');
-    /* If the PI database has no brand_name column yet, carry on without brands instead of failing the whole sync. */
+    let res=await piGet(BASE+',brand_name,ref_po');
+    /* If the PI database lacks the brand_name or ref_po column, carry on without them instead of failing the whole sync. */
+    if(res.status===400)res=await piGet(BASE+',brand_name');
     if(res.status===400)res=await piGet(BASE);
     if(!res.ok)throw new Error('HTTP '+res.status);
     const rows=await res.json();
-    const seen=CLOUD?PISEEN:piSeen();const seen0=new Set(seen);const cq=[];let nc=0,np=0,nb=0,na=0,touched=new Set();const adds=[];
+    const seen=CLOUD?PISEEN:piSeen();const seen0=new Set(seen);const cq=[];let nc=0,np=0,nb=0,na=0,touched=new Set();const adds=[],upd=[];
     rows.forEach(pi=>{
       const k=piCo(pi.company),name=String(pi.buyer_name||'').trim();
       if(!name)return;
@@ -1792,11 +1829,14 @@ async function syncPI(manual){
         if(fixN(p))touched.add(k+'|products');
         const pino=String(pi.pi_number||'').trim(),qty=+it.qty;
         if(!ME||!p||!pino||!(qty>0))return;
+        /* Fill the Reference PO on entries this sync created earlier, when the PI has one and the entry does not. */
+        const rpv=String(pi.ref_po||'').trim();
+        if(rpv)D[k].advances.forEach(a=>{if(a.createdBy==='pi'&&norm(a.po)===norm(pino)&&!String(a.refPo||'').trim()){a.refPo=rpv;upd.push({k:k,a:a});}});
         const akey='a|'+k+'|'+piSlug(pino)+'|'+ix;
         if(seen.has(akey))return;
         const have=[...D[k].advances.values()].some(a=>norm(a.po)===norm(pino)&&a.productId===p.id)||adds.some(a=>a.k===k&&norm(a.row.po)===norm(pino)&&a.row.productId===p.id);
         if(have){seen.add(akey);return;}
-        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,received:0,note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
+        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,received:0,refPo:String(pi.ref_po||'').trim(),note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
       });
     });
     if(adds.length){
@@ -1807,7 +1847,9 @@ async function syncPI(manual){
       try{localStorage.setItem(PI_ADV_KEY,go?'all':'new');}catch(e){}
       adds.forEach(a=>{seen.add(a.akey);if(go){D[a.k].advances.set(a.row.id,a.row);na++;touched.add(a.k+'|advances');cq.push({company:a.k,section:'advances',id:a.row.id,data:a.row,created_by_name:a.row.createdByName,by_pi:true});}});
     }
+    upd.forEach(u=>touched.add(u.k+'|advances'));
     if(CLOUD){
+      for(const u of upd){try{await sbRest('PATCH','od_records?company=eq.'+u.k+'&section=eq.advances&id=eq.'+encodeURIComponent(u.a.id),{data:u.a},'return=minimal');}catch(e){}}
       const rows=cq.slice();
       [...seen].filter(x=>!seen0.has(x)).forEach(k=>rows.push({company:'_',section:'pi_seen',id:k,data:{},created_by_name:'pi',by_pi:true}));
       for(let i=0;i<rows.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',rows.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
@@ -1816,7 +1858,7 @@ async function syncPI(manual){
       piSave(seen);
     }
     if(touched.size)buildAll();
-    if(nc||np||nb||na){toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
+    if(nc||np||nb||na||upd.length){toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(upd.length?', '+upd.length+' reference PO(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
     else if(manual)toast('PI sync: nothing new ('+rows.length+' PIs checked)');
   }catch(e){if(!cloudGone(e)&&manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
   finally{piBusy=false;}
@@ -1826,7 +1868,7 @@ async function syncPI(manual){
 const STMT_SEEN='orderdesk:stmt:seen';
 let STMT=null;
 const alnum=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-function stmtSeen(){let s;try{s=new Set(JSON.parse(localStorage.getItem(STMT_SEEN)||'[]'));}catch(e){s=new Set();}COS.forEach(c=>D[c.key].advances.forEach(a=>{if(a.stmtKey)s.add(a.stmtKey);}));return s;}
+function stmtSeen(){let s;try{s=new Set(JSON.parse(localStorage.getItem(STMT_SEEN)||'[]'));}catch(e){s=new Set();}COS.forEach(c=>{D[c.key].advances.forEach(a=>{if(a.stmtKey)s.add(a.stmtKey);});D[c.key].payments.forEach(a=>{if(a.stmtKey)s.add(a.stmtKey);});});return s;}
 function parseCSV(t){
   const rows=[];let r=[],c='',q=false;
   for(let i=0;i<t.length;i++){const ch=t[i];
@@ -1932,6 +1974,7 @@ function matchStatement(items){
   });
 }
 function renderStmt(){
+  if(STMT&&STMT.mode==='pay')return renderStmtPay();
   const fh=$('#formHost');if(!STMT)return;
   const opts=poOptions();
   const optHtml=(sel,client)=>{
@@ -1957,14 +2000,85 @@ async function loadStatement(file){
     if(/\.csv$/i.test(file.name)||file.type==='text/csv')rows=parseCSV(await file.text());
     else{const X=await loadXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array',cellDates:true});rows=X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''});}
     const items=parseStatement(rows);
-    STMT={name:file.name,rows:matchStatement(items)};
+    STMT=S.tab==='payments'?{mode:'pay',name:file.name,rows:matchStatementPay(items)}:{name:file.name,rows:matchStatement(items)};
     S.form=null;renderStmt();const b=$('#stmtbox');if(b&&b.scrollIntoView)b.scrollIntoView({block:'nearest'});
   }catch(e){toast((e&&e.message)||'Could not read the statement');}
+}
+/* ---------- Bank statement against invoices (Payment Status) ---------- */
+const openInvs=()=>R.inv.filter(i=>i.pend>TOL&&i.c).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.invNo).localeCompare(String(b.invNo)));
+function payTargets(tgt){
+  const all=openInvs();if(!tgt)return [];
+  const k=tgt.slice(2);
+  if(tgt[0]==='i'){const one=all.find(x=>x.id===k);return one?[one].concat(all.filter(x=>x.c.id===one.c.id&&x.id!==k)):[];}
+  if(tgt[0]==='p')return all.filter(x=>norm(x.po)===k);
+  if(tgt[0]==='c')return all.filter(x=>x.c.id===k);
+  return [];
+}
+function matchStatementPay(items){
+  const inv=openInvs(),seen=stmtSeen(),taken=new Set();
+  const cl=[...new Map(inv.map(i=>[i.c.id,{client:i.c.name,id:i.c.id}])).values()];
+  return items.map(it=>{
+    const n=alnum(it.narr+' '+it.ref),nn=String(it.narr||'').toUpperCase().replace(/[^A-Z0-9]+/g,' ');
+    let tgt='',how='',on=false;
+    const hi=inv.filter(x=>alnum(x.invNo).length>=6&&n.includes(alnum(x.invNo)));
+    if(hi.length===1){tgt='i:'+hi[0].id;how='Invoice number';on=true;}
+    else{
+      const pos=[...new Set(inv.filter(x=>alnum(x.po).length>=6&&n.includes(alnum(x.po))).map(x=>norm(x.po)))];
+      if(pos.length===1){tgt='p:'+pos[0];how='PI / PO number';on=true;}
+      else{
+        const cn=clientsInNarr(nn,cl);
+        if(cn.length===1){
+          const c=cl.find(x=>x.client===cn[0]),mine=inv.filter(x=>x.c.id===c.id);
+          const ex=mine.filter(x=>Math.abs(x.pend-it.amt)<=1);
+          if(ex.length===1){tgt='i:'+ex[0].id;how='Client + amount';on=true;}
+          else{tgt='c:'+c.id;how='Client matched, oldest invoice first';}
+        }
+      }
+    }
+    if(on&&tgt&&!seen.has(it.key)){if(taken.has(tgt)){on=false;how='Already matched by another credit';}else taken.add(tgt);}
+    return Object.assign({},it,{tgt:tgt,how:how,dup:seen.has(it.key),on:on&&!seen.has(it.key)});
+  });
+}
+function renderStmtPay(){
+  const fh=$('#formHost');if(!STMT)return;
+  const inv=openInvs();
+  const byC=new Map();inv.forEach(i=>{if(!byC.has(i.c.id))byC.set(i.c.id,{c:i.c,l:[]});byC.get(i.c.id).l.push(i);});
+  const optHtml=sel=>'<option value="">Not matched</option>'+[...byC.values()].sort((a,b)=>byName(a.c,b.c)).map(g=>'<optgroup label="'+esc(g.c.name)+'"><option value="c:'+esc(g.c.id)+'"'+(sel==='c:'+g.c.id?' selected':'')+'>All open invoices, oldest first</option>'+g.l.map(i=>'<option value="i:'+esc(i.id)+'"'+(sel==='i:'+i.id?' selected':'')+'>'+esc(i.invNo)+' · pending '+inr(i.pend)+'</option>').join('')+'</optgroup>').join('');
+  const nUn=STMT.rows.filter(r=>!r.tgt&&!r.dup).length;
+  const vis=STMT.rows.map((r,i)=>({r:r,i:i})).filter(x=>STMT.all||x.r.tgt||x.r.dup);
+  const body=vis.map(x=>{const r=x.r,i=x.i,t=payTargets(r.tgt),tot=t.reduce((a,b)=>a+b.pend,0);
+    const over=r.tgt&&t.length&&r.amt>tot+1?'<span class="chip warn">Above pending '+inr(tot)+'</span>':'';
+    return '<tr><td><input type="checkbox" data-sr="'+i+'" '+(r.on?'checked':'')+(r.dup?' disabled':'')+' aria-label="Add this payment"></td><td>'+fd(r.date)+'</td><td class="wrapc">'+esc(r.narr||'—')+'</td><td class="n">'+inr(r.amt)+'</td><td>'+(r.dup?'<span class="chip n0">Already added</span>':'<select data-ss="'+i+'" aria-label="Against invoice">'+optHtml(r.tgt)+'</select> '+(r.how?'<span class="muted">'+esc(r.how)+'</span> ':'')+over)+'</td></tr>';}).join('');
+  const sum=vis.filter(x=>x.r.on).reduce((a,x)=>a+x.r.amt,0);
+  fh.innerHTML='<div class="form" id="stmtbox"><h3>Bank statement · '+esc(STMT.name)+'</h3><p class="muted">'+STMT.rows.length+' credit(s) found'+(STMT.all?'':'; showing the '+(STMT.rows.length-nUn)+' that match an invoice, PI or client')+'. Payments with an invoice or PI number are ticked for you. Check each one, then add them as payments.</p>'+
+   (nUn?'<label class="fi"><input type="checkbox" id="stmtall"'+(STMT.all?' checked':'')+'> Show the '+nUn+' credits that match no invoice</label>':'')+
+   (vis.length?'<div class="tw"><table class="tight"><thead><tr><th></th><th>Date</th><th>Narration</th><th class="r">Credit</th><th>Against invoice</th></tr></thead><tbody>'+body+'</tbody></table></div>':'<p>No credit entries found in this file.</p>')+
+   '<div class="fa"><button class="btn primary" data-act="stmtapply">Add selected</button><button class="btn" data-act="stmtcancel">Close</button><span class="muted">'+vis.filter(x=>x.r.on).length+' ticked · '+inr(sum)+'</span></div></div>';
+}
+async function applyStatementPay(){
+  if(!STMT)return;
+  const seen=stmtSeen();let added=0,skipped=0;
+  for(const r of STMT.rows){
+    if(!r.on||r.dup)continue;
+    const t=payTargets(r.tgt);if(!t.length){skipped++;continue;}
+    let left=r.amt;
+    for(let j=0;j<t.length&&left>0.004;j++){
+      const need=t[j].pend,last=j===t.length-1||left<=need+0.004;
+      const part=last?left:Math.min(left,need);if(!(part>0))continue;
+      const ok=await put('payments',{invoiceId:t[j].id,date:r.date,amount:Math.round(part*100)/100,mode:'Bank transfer',ref:r.ref||'',note:'From bank statement: '+(r.narr||'').slice(0,120),stmtKey:r.key});
+      if(ok)left-=part;if(last)break;
+    }
+    seen.add(r.key);added++;
+  }
+  try{localStorage.setItem(STMT_SEEN,JSON.stringify([...seen]));}catch(e){}
+  STMT.rows=matchStatementPay(STMT.rows.map(x=>({date:x.date,amt:x.amt,narr:x.narr,ref:x.ref,key:x.key})));
+  renderStmt();
+  toast(added?added+' payment(s) added to Payment Status'+(skipped?'; '+skipped+' skipped (no invoice chosen)':''):(skipped?'Pick an invoice for the ticked payments first':'Nothing ticked'));
 }
 /* ---------- Client dashboard ---------- */
 function dashData(cid){
   const today=todayStr();
-  const clients=[...D[S.co].clients.values()].sort(byName);
+  const clients=[...D[S.co].clients.values()].filter(clientShown).sort(byName);
   const inScope=c=>c&&(!cid||c.id===cid);
   const po=new Map();
   R.groups.forEach(g=>{
@@ -2093,6 +2207,7 @@ document.addEventListener('change',e=>{if(e.target&&e.target.id==='dash_client')
 /* ---------- open a PI in the PI Desk ---------- */
 const PI_SITE='https://pi-generator-theta.vercel.app';
 const PI_IDS=new Map();
+const refOf=po=>(R&&R.refMap&&R.refMap.get(String(po||'').trim().toLowerCase()))||'';
 const polink=po=>{po=String(po||'').trim();return po?'<button type="button" class="lnk polink" data-act="openpi" data-po="'+esc(po)+'" title="Open this PI in PI Desk">'+esc(po)+'</button>':'';};
 async function openPI(po){
   po=String(po||'').trim();if(!po)return;
@@ -2197,6 +2312,7 @@ function fyCardHTML(){
 }
 async function applyStatement(){
   if(!STMT)return;
+  if(STMT.mode==='pay')return applyStatementPay();
   const rows=STMT.rows;
   const seen=stmtSeen();let added=0,skipped=0;
   for(let i=0;i<rows.length;i++){
@@ -2225,6 +2341,7 @@ document.addEventListener('change',e=>{
   if(!STMT||!t.closest||!t.closest('#stmtbox'))return;
   if(t.id==='stmtall'){STMT.all=t.checked;renderStmt();return;}
   if(t.dataset&&t.dataset.sr!=null){STMT.rows[+t.dataset.sr].on=t.checked;renderStmt();}
+  else if(t.dataset&&t.dataset.ss!=null&&STMT.mode==='pay'){const r=STMT.rows[+t.dataset.ss];r.tgt=t.value;r.how=t.value?'Chosen by you':'';if(t.value)r.on=true;renderStmt();}
   else if(t.dataset&&t.dataset.ss!=null){const r=STMT.rows[+t.dataset.ss];r.po=t.value;r.how=t.value?'Chosen by you':'';if(t.value)r.on=true;renderStmt();}
 });
 
@@ -2577,7 +2694,7 @@ function ledSheetHTML(L){
 function renderLedger(){
   const host=$('#ledHost');if(!host)return;
   const a=document.activeElement;if(a&&host.contains(a)&&(a.id==='led_msg'||a.id==='led_bank'))return;   /* do not disturb typing */
-  const clients=[...D[S.co].clients.values()].sort(byName);
+  const clients=[...D[S.co].clients.values()].filter(clientShown).sort(byName);
   const owing=new Set(R.inv.filter(i=>i.pend>TOL&&i.c).map(i=>i.c.id));
   if(!S.ledClient||!D[S.co].clients.has(S.ledClient))S.ledClient=([...clients].find(c=>owing.has(c.id))||clients[0]||{}).id||'';
   const co=COS.find(x=>x.key===S.co).name;
