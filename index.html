@@ -602,6 +602,8 @@ td.act .lnk.del{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
 @media (max-width:1099px){.atab{top:auto;bottom:16px;left:12px;transform:none;flex-direction:row;min-height:44px;width:auto;padding:8px 14px;border:1px solid var(--line);border-radius:99px}.atab span{writing-mode:horizontal-tb;transform:none}}
 @media (max-width:640px){.ph>.pt{width:100%;justify-content:flex-start}#kpis.dtiles{grid-template-columns:minmax(0,1fr);gap:8px}#kpis.dtiles .dt{flex-direction:row;align-items:center;padding:10px 14px}#kpis.dtiles .dt .ic{width:38px;height:38px}}
 /* ---------- ledger ---------- */
+.paystmt{display:grid;gap:12px;margin:0 0 16px}.paystmt h3{margin:0 0 2px}.psrow{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}.psrow .f{flex:1 1 280px}.psrow label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}.psrow select{width:100%}
+.hidnote{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;margin:0 0 14px;padding:12px 16px;border-radius:14px;background:var(--warn-bg,#fff4e0);color:var(--warn,#8a5300);border:1px solid currentColor}.hidnote div{display:grid;gap:2px;min-width:0;flex:1 1 320px}.hidnote span{color:var(--ink);font-size:13px}
 .ledtools{display:grid;gap:16px}
 .ledrow{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end}
 .ledrow .f{flex:1 1 240px;min-width:0}
@@ -1072,7 +1074,7 @@ const TIP={
 };
 function renderTabs(){
   const d=dataFor(S.co);
-  const cnt={dashboard:d.clients.size,clients:d.clients.size,products:d.products.size,advances:d.advances.length,invoices:d.invoices.length,payments:R.inv.filter(i=>i.pend>TOL).length,ledger:new Set(R.inv.filter(i=>i.pend>TOL&&i.c).map(i=>i.c.id)).size,dispatches:R.t.openPOs};
+  const cnt={dashboard:[...d.clients.values()].filter(clientShown).length,clients:d.clients.size,products:d.products.size,advances:d.advances.length,invoices:d.invoices.length,payments:R.inv.filter(i=>i.pend>TOL).length,ledger:new Set(R.inv.filter(i=>i.pend>TOL&&i.c).map(i=>i.c.id)).size,dispatches:R.t.openPOs};
   const tl=['dashboard','clients','products','advances','invoices','payments','ledger','dispatches'].concat(isAdmin()?['admin']:[]);cnt.admin=USERS.size;
   $('#tabs').innerHTML=tl.map(s=>'<button class="tab" role="tab" data-act="tab" data-tab="'+s+'" aria-selected="'+(s===S.tab)+'"><span class="row">'+TLAB[s]+'<span class="c">'+cnt[s]+'</span></span><span class="dt"><span>'+esc(TIP[s](cnt[s]))+'</span></span></button>').join('');
 }
@@ -1189,6 +1191,15 @@ function renderSync(){
 function refresh(){recompute();renderKpis();renderTabs();renderBanner();renderList();}
 function buildAll(){recompute();renderCos();renderKpis();renderTabs();renderBanner();buildPanel();renderSync();}
 
+function payStmtHTML(){
+  const cs=[...D[S.co].clients.values()].filter(clientShown).sort(byName);
+  const owe=new Map();R.inv.forEach(i=>{if(i.pend>TOL&&i.c)owe.set(i.c.id,(owe.get(i.c.id)||0)+i.pend);});
+  if(!cs.length)return '';
+  const first=(cs.find(c=>owe.has(c.id))||cs[0]).id;
+  return '<section class="dcard paystmt" aria-label="Party statement"><div><h3>Party statement</h3><p class="muted">Pick a party to open its invoice-wise statement. Save it as a PDF or send it to ask for payment.</p></div>'+
+    '<div class="psrow"><div class="f"><label for="ps_client">Party</label><select id="ps_client">'+cs.map(c=>'<option value="'+esc(c.id)+'"'+(c.id===first?' selected':'')+'>'+esc(c.name)+(c.brand?' · '+esc(c.brand):'')+(owe.has(c.id)?'  ·  '+inr(owe.get(c.id))+' due':'')+'</option>').join('')+'</select></div>'+
+    '<button type="button" class="btn primary" data-act="psopen">Open statement</button></div></section>';
+}
 function buildPanel(){
   const t=S.tab;
   renderKpis();
@@ -1198,7 +1209,7 @@ function buildPanel(){
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='payments'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against invoices">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn primary" data-act="xlfile" title="Upload the old Google Sheet, downloaded as Excel (.xlsx)">Import from Excel</button><input type="file" id="xlFile" accept=".xlsx,.xls" hidden>':'')+
-    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
+    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='payments'?payStmtHTML():'')+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
 }
@@ -2076,6 +2087,13 @@ async function applyStatementPay(){
   toast(added?added+' payment(s) added to Payment Status'+(skipped?'; '+skipped+' skipped (no invoice chosen)':''):(skipped?'Pick an invoice for the ticked payments first':'Nothing ticked'));
 }
 /* ---------- Client dashboard ---------- */
+function hiddenNote(){
+  if(!limitedUser())return '';
+  const all=[...D[S.co].clients.values()],hid=all.filter(c=>!clientShown(c));
+  if(!hid.length)return '';
+  const nb=hid.filter(c=>String(c.name||'').trim()&&!String(c.brand||'').trim()).length;
+  return '<div class="hidnote" role="note"><div><b>'+hid.length+' of '+all.length+' clients are hidden here</b><span>'+(nb?'They have no brand name. ':'')+'Add the brand name for each client and all of its products, advances and invoices will show on this dashboard and in every tab.</span></div><button type="button" class="btn sm primary" data-act="goto" data-tab="clients">Open Client / Brand</button></div>';
+}
 function dashData(cid){
   const today=todayStr();
   const clients=[...D[S.co].clients.values()].filter(clientShown).sort(byName);
@@ -2131,7 +2149,7 @@ function renderDash(){
   const cid=S.dashClient&&D[S.co].clients.has(S.dashClient)?S.dashClient:'';S.dashClient=cid;
   const X=dashData(cid),c=cid?D[S.co].clients.get(cid):null,coName=COS.find(x=>x.key===S.co).name;
   const picker='<div class="dpick"><label class="sr" for="dash_client">Client</label><select id="dash_client" aria-label="Choose client"><option value="">All clients</option>'+X.clients.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===cid?' selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select><button type="button" class="btn" data-act="dprint">Print / Save PDF</button></div>';
-  if(!X.clients.length)return host.innerHTML='<div class="dash"><section class="dhero"><div class="dhero-top"><span class="eyebrow">Dashboard · '+esc(coName)+'</span></div><div class="dwho"><div><h2>No clients yet</h2><div class="dmeta"><span>Add a client in Client / Brand. Its products, payments and dispatch then show up here.</span></div></div></div></section></div>';
+  if(!X.clients.length)return host.innerHTML=hiddenNote()+'<div class="dash"><section class="dhero"><div class="dhero-top"><span class="eyebrow">Dashboard · '+esc(coName)+'</span></div><div class="dwho"><div><h2>No clients yet</h2><div class="dmeta"><span>Add a client in Client / Brand. Its products, payments and dispatch then show up here.</span></div></div></div></section></div>';
   const advT=X.pos.reduce((a,o)=>a+o.adv,0),invT=X.pos.reduce((a,o)=>a+o.invPaid,0),left=Math.max(0,X.value-advT-invT);
   const col=pc0(X.received,X.value);
   const bits=c?[c.brand&&('Brand: '+c.brand),c.gstin&&('GSTIN '+c.gstin),c.contact,c.phone,c.email,c.city].filter(Boolean):[X.clients.length+' clients',X.prods.length+' products',X.pos.length+(X.pos.length===1?' PI / PO':' PIs / POs')];
@@ -2189,7 +2207,7 @@ function renderDash(){
   const s3=X.outstanding>TOL?'<div class="dsum">'+donut([{v:X.overdue,cls:'s4',tip:'Due (overdue) '+inr(X.overdue)},{v:ndAmt,cls:'s2',tip:'Not due yet '+inr(ndAmt)}],op+'%','overdue',124,op+' percent of outstanding amount is overdue')+'<div class="facts"><div class="fact"><i class="s4"></i><span>Due (overdue)</span><b>'+inr(X.overdue)+'</b></div><div class="fact"><i class="s2"></i><span>Not due yet</span><b>'+inr(ndAmt)+'</b></div></div></div>':'';
   h+=dChart('due','Due and not due','Pending invoice amounts. “Due” means the due date has passed.',[{cls:'s4',t:'▲ Due (overdue)'},{cls:'s2',t:'Not due yet'}],r3,t3,['Nothing outstanding','Every invoice is paid, or none has been raised yet.'],s3)+'</div>';
   h+=bkCardHTML()+'</div>';
-  host.innerHTML=h;
+  host.innerHTML=hiddenNote()+h;
 }
 /* one shared tooltip for chart marks */
 (function(){
@@ -2645,7 +2663,7 @@ const LED_BANK=()=>'orderdesk:ledbank:'+S.co;
 const ledBank=()=>{try{return localStorage.getItem(LED_BANK())||'';}catch(e){return '';}};
 function ledData(cid){
   const today=todayStr();
-  const c=D[S.co].clients.get(cid)||null;
+  const c0=D[S.co].clients.get(cid)||null,c=clientShown(c0)?c0:null;
   let rows=R.inv.filter(i=>i.c&&i.c.id===cid);
   const all=rows.length;
   if(!S.ledAll)rows=rows.filter(i=>i.pend>TOL);
@@ -2696,7 +2714,7 @@ function renderLedger(){
   const a=document.activeElement;if(a&&host.contains(a)&&(a.id==='led_msg'||a.id==='led_bank'))return;   /* do not disturb typing */
   const clients=[...D[S.co].clients.values()].filter(clientShown).sort(byName);
   const owing=new Set(R.inv.filter(i=>i.pend>TOL&&i.c).map(i=>i.c.id));
-  if(!S.ledClient||!D[S.co].clients.has(S.ledClient))S.ledClient=([...clients].find(c=>owing.has(c.id))||clients[0]||{}).id||'';
+  if(!S.ledClient||!clients.some(x=>x.id===S.ledClient))S.ledClient=([...clients].find(c=>owing.has(c.id))||clients[0]||{}).id||'';
   const co=COS.find(x=>x.key===S.co).name;
   if(!clients.length){host.innerHTML='<div class="empty"><h3>No clients yet</h3><p class="muted">Add a client and its invoices. A ledger for each party appears here.</p></div>';return;}
   const L=ledData(S.ledClient),key=S.ledClient+'|'+(S.ledAll?1:0);
@@ -2738,7 +2756,9 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('click',e=>{
   const a=e.target.closest&&e.target.closest('[data-act]');if(!a)return;
-  const act=a.dataset.act;if(act.indexOf('led')!==0)return;
+  const act=a.dataset.act;
+  if(act==='psopen'){const v=($('#ps_client')||{}).value;if(v){S.ledClient=v;S.ledAll=false;S.tab='ledger';S.form=null;S.q='';S.filters={};S.sorts={};saveUI();renderTabs();buildPanel();window.scrollTo(0,0);}return;}
+  if(act.indexOf('led')!==0)return;
   const L=ledData(S.ledClient),c=L.c,msg=($('#led_msg')||{}).value||'';
   if(act==='ledprint'){
     const st=document.createElement('style');st.textContent='@page{size:A4 landscape;margin:10mm}';document.head.appendChild(st);
