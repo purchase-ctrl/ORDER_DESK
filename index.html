@@ -604,6 +604,12 @@ td.act .lnk.del{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
 /* ---------- ledger ---------- */
 .paystmt{display:grid;gap:12px;margin:0 0 16px}.paystmt h3{margin:0 0 2px}.psrow{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}.psrow .f{flex:1 1 280px}.psrow label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}.psrow select{width:100%}
 .hidnote{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;margin:0 0 14px;padding:12px 16px;border-radius:14px;background:var(--warn-bg,#fff4e0);color:var(--warn,#8a5300);border:1px solid currentColor}.hidnote div{display:grid;gap:2px;min-width:0;flex:1 1 320px}.hidnote span{color:var(--ink);font-size:13px}
+.gscard{display:grid;gap:12px;margin:0 0 16px}.gscard h3{margin:0 0 2px}
+.gsgrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:12px}
+.gsgrid .gsw{grid-column:1/-1}.gsgrid label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}
+.gschk{display:flex;gap:8px;align-items:center;font-size:13.5px}.gschk input{width:18px;height:18px;min-height:0;flex:none}
+.gsbtn{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}.gsbtn span{font-size:13px;color:var(--muted)}.gsbtn span.bad{color:var(--bad,#b42318);font-weight:600}
+@media (max-width:760px){.gsgrid{grid-template-columns:minmax(0,1fr)}}
 .ledtools{display:grid;gap:16px}
 .ledrow{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end}
 .ledrow .f{flex:1 1 240px;min-width:0}
@@ -1209,7 +1215,7 @@ function buildPanel(){
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='payments'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against invoices">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn primary" data-act="xlfile" title="Upload the old Google Sheet, downloaded as Excel (.xlsx)">Import from Excel</button><input type="file" id="xlFile" accept=".xlsx,.xls" hidden>':'')+
-    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='payments'?payStmtHTML():'')+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
+    (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='payments'?payStmtHTML():'')+(t==='admin'&&isAdmin()?(CLOUD?gsCardHTML():'')+fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
 }
@@ -2562,6 +2568,89 @@ document.addEventListener('submit',async e=>{
     await cloudLoad();XL=null;S.form=null;buildAll();toast('Uploaded '+rows.length+' entries to '+cn);
   }catch(err){if(!cloudGone(err))er.textContent='Upload failed: '+((err&&err.message)||'unknown error');}
 });
+
+/* ---------- Live link to the Google Sheet (published to the web). Sheet is the source, the app follows it. ---------- */
+const GS_KEY='orderdesk:gs',GS_EVERY=5*60*1000;
+const GS_DEF={url:'',co:'si',own:'',auto:true,last:'',msg:'',err:false};
+const gsCfg=()=>{try{return Object.assign({},GS_DEF,JSON.parse(localStorage.getItem(GS_KEY)||'{}'));}catch(e){return Object.assign({},GS_DEF);}};
+const gsSave=c=>{try{localStorage.setItem(GS_KEY,JSON.stringify(c));}catch(e){}};
+let gsBusy=false;
+const hsh=s=>{let h=5381;s=String(s);for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36);};
+function gsXlsxUrl(u){u=String(u||'').trim();if(!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/e\/[\w-]+\/pub/.test(u))return '';return u.replace(/[?#].*$/,'')+'?output=xlsx';}
+function gsCardHTML(){
+  const c=gsCfg(),users=[...USERS.values()].filter(u=>roleOf(u)!=='admin').sort((a,b)=>String(a.user).localeCompare(String(b.user)));
+  return '<section class="dcard gscard" aria-label="Google Sheet link"><div><h3>Google Sheet link</h3><p class="muted">Paste the “Publish to web” link of your ERP sheet. The app reads the sheet, adds new rows and updates changed invoices, advances and payments. Nothing is entered twice.</p></div>'+
+    '<div class="gsgrid"><div class="f gsw"><label for="gs_url">Published sheet link</label><input id="gs_url" type="url" inputmode="url" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?output=csv" value="'+esc(c.url)+'"></div>'+
+    '<div class="f"><label for="gs_co">Company</label><select id="gs_co">'+COS.map(x=>'<option value="'+x.key+'"'+(x.key===c.co?' selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div>'+
+    '<div class="f"><label for="gs_own">These entries belong to</label><select id="gs_own"><option value="">Nobody (admin only)</option>'+users.map(u=>'<option value="'+esc(u.id)+'"'+(u.id===c.own?' selected':'')+'>'+esc(u.user)+(u.piName?'':' (not linked to a PI Desk name)')+'</option>').join('')+'</select></div></div>'+
+    '<label class="gschk"><input type="checkbox" id="gs_auto"'+(c.auto?' checked':'')+'> Update automatically every 5 minutes while this app is open on this device</label>'+
+    '<div class="gsbtn"><button type="button" class="btn primary" data-act="gssync">Save and sync now</button><span id="gsmsg" class="'+(c.err?'bad':'')+'" role="status">'+esc(gsStatus(c))+'</span></div></section>';
+}
+const gsStatus=c=>c.msg?c.msg+(c.last&&!c.err?' · last sync '+new Date(c.last).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):''):(c.last?'Last sync '+new Date(c.last).toLocaleString('en-IN'):'Not synced yet.');
+function gsSay(msg,err){const c=gsCfg();c.msg=msg;c.err=!!err;gsSave(c);const el=$('#gsmsg');if(el){el.textContent=gsStatus(c);el.className=err?'bad':'';}}
+/* What has to be added and what has to change, compared with what is already in the cloud. Matches by client, product and invoice number, never by row number. */
+function gsPlan(co,data,oName){
+  const d=D[co],ins=[],upd=[];
+  const mk=(sec,r)=>{r=oName?Object.assign({},r,{createdBy:'pi',createdByName:oName}):r;return {company:co,section:sec,id:r.id,data:r,created_by_name:oName||ME.user,by_pi:!!oName,owner_key:oName?(alnum(oName)||null):null};};
+  const cmap={},pmap={};
+  const exC=new Map();d.clients.forEach(c=>exC.set(cnorm(c.name),c.id));
+  data.clients.forEach(c=>{const k=cnorm(c.name);if(exC.has(k)){cmap[c.id]=exC.get(k);return;}const id='gs_c_'+hsh(k);exC.set(k,id);cmap[c.id]=id;ins.push(mk('clients',Object.assign({},c,{id:id})));});
+  const exP=new Map();d.products.forEach(p=>exP.set(p.clientId+'|'+pnorm(p.name),p.id));
+  data.products.forEach(p=>{const cid=cmap[p.clientId]||p.clientId,k=cid+'|'+pnorm(p.name);if(exP.has(k)){pmap[p.id]=exP.get(k);return;}const id='gs_p_'+hsh(k);exP.set(k,id);pmap[p.id]=id;ins.push(mk('products',Object.assign({},p,{id:id,clientId:cid})));});
+  const pid=r=>pmap[r.productId]||r.productId;
+  /* invoices */
+  const exI=new Map();[...d.invoices.values()].forEach(r=>{const k=r.productId+'|'+norm(r.invNo);if(!exI.has(k))exI.set(k,r);exI.set(k+'|'+(+r.qty||0)+'|'+(r.date||''),r);});
+  const seenI=new Set();
+  data.invoices.forEach(r=>{const p=pid(r);let k=p+'|'+norm(r.invNo);if(seenI.has(k))k+='|'+(+r.qty||0)+'|'+(r.date||'');seenI.add(k);
+    const old=exI.get(k);
+    if(old){const ch=['qty','extra','paid'].some(f=>Math.abs((+old[f]||0)-(+r[f]||0))>0.004)||(r.date&&old.date!==r.date)||norm(old.po)!==norm(r.po);
+      if(ch)upd.push({company:co,section:'invoices',id:old.id,data:Object.assign({},old,{qty:r.qty,extra:r.extra,paid:r.paid,date:r.date||old.date,po:r.po})});return;}
+    ins.push(mk('invoices',Object.assign({},r,{id:'gs_i_'+hsh(k),productId:p})));});
+  /* advances: the same PO, product and date can repeat, so rows are matched in order */
+  const exA=new Map();[...d.advances.values()].sort((a,b)=>String(a.id).localeCompare(String(b.id))).forEach(r=>{const k=r.productId+'|'+norm(r.po)+'|'+(r.date||'');if(!exA.has(k))exA.set(k,[]);exA.get(k).push(r);});
+  const nA=new Map();
+  data.advances.forEach(r=>{const p=pid(r),k=p+'|'+norm(r.po)+'|'+(r.date||''),n=nA.get(k)||0;nA.set(k,n+1);
+    const old=(exA.get(k)||[])[n];
+    if(old){const ch=['received','poQty','poRate'].some(f=>Math.abs((+old[f]||0)-(+r[f]||0))>0.004);
+      if(ch)upd.push({company:co,section:'advances',id:old.id,data:Object.assign({},old,{received:r.received,poQty:r.poQty,poRate:r.poRate||old.poRate})});return;}
+    ins.push(mk('advances',Object.assign({},r,{id:'gs_a_'+hsh(k+'|'+n),productId:p})));});
+  return {ins:ins,upd:upd};
+}
+async function gsSync(manual){
+  if(!CLOUD||!ME||!isAdmin()||gsBusy)return;
+  const cfg=gsCfg(),url=gsXlsxUrl(cfg.url);
+  if(!url){if(manual)gsSay('Paste the “Publish to web” link of your sheet first (it starts with https://docs.google.com/spreadsheets/d/e/).',true);return;}
+  gsBusy=true;if(manual)gsSay('Reading the sheet…');
+  try{
+    let buf;
+    try{const r=await fetch(url+'&_='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);buf=await r.arrayBuffer();}
+    catch(e){throw new Error('Could not read the sheet ('+((e&&e.message)||'blocked')+'). In Google Sheets open File > Share > Publish to web, choose “Entire document”, press Publish, and try again.');}
+    const XLSX=await loadXLSX();
+    let res;try{res=xlParse(XLSX,buf);}catch(e){throw new Error('The link did not give the full sheet. Publish “Entire document” (not one tab). '+((e&&e.message)||''));}
+    const u=cfg.own?USERS.get(cfg.own):null,oName=u?(u.piName||u.user):null;
+    const plan=gsPlan(cfg.co,res.data,oName),cn=COS.find(c=>c.key===cfg.co).name;
+    const total=plan.ins.length+plan.upd.length;
+    if(!total){gsMark(cfg,'Sheet and app already match');if(manual)toast('Already up to date');return;}
+    if(!cfg.last&&!confirm('First sync for '+cn+': add '+plan.ins.length+' new entries and update '+plan.upd.length+'.'+(u&&!u.piName?'\n\nLink '+u.user+' to the PI Desk name "'+u.user+'" in the Admin tab so that they can see them.':'')+'\n\nContinue?'))throw new Error('Cancelled. Nothing was changed.');
+    for(let i=0;i<plan.ins.length;i+=200)await sbRest('POST','od_records?on_conflict=company,section,id',plan.ins.slice(i,i+200),'resolution=ignore-duplicates,return=minimal');
+    for(let i=0;i<plan.upd.length;i+=6)await Promise.all(plan.upd.slice(i,i+6).map(w=>sbRest('PATCH','od_records?company=eq.'+w.company+'&section=eq.'+w.section+'&id=eq.'+encodeURIComponent(w.id),{data:w.data},'return=minimal')));
+    await cloudLoad();
+    gsMark(cfg,plan.ins.length+' new, '+plan.upd.length+' updated');
+    if(S.tab==='admin')refreshAdminOnly();else buildAll();
+    toast('Sheet synced: '+plan.ins.length+' new, '+plan.upd.length+' updated');
+  }catch(e){if(!cloudGone(e))gsSay((e&&e.message)||'Sync failed.',true);}
+  finally{gsBusy=false;}
+}
+function gsMark(cfg,msg){const c=gsCfg();c.last=new Date().toISOString();c.msg=msg;c.err=false;gsSave(c);const el=$('#gsmsg');if(el){el.textContent=gsStatus(c);el.className='';}}
+function refreshAdminOnly(){const el=$('#gsmsg');if(el){const c=gsCfg();el.textContent=gsStatus(c);}buildAll();}
+document.addEventListener('click',e=>{
+  const a=e.target.closest&&e.target.closest('[data-act="gssync"]');if(!a)return;
+  const c=gsCfg();c.url=($('#gs_url')||{}).value.trim();c.co=($('#gs_co')||{}).value||'si';c.own=($('#gs_own')||{}).value||'';c.auto=!!($('#gs_auto')||{}).checked;
+  if(c.url!==gsCfg().url||c.co!==gsCfg().co)c.last='';   /* a new link or company needs a confirmed first sync */
+  gsSave(c);gsSync(true);
+});
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='gs_auto'){const c=gsCfg();c.auto=e.target.checked;gsSave(c);}});
+setInterval(()=>{const c=gsCfg();if(c.auto&&c.last&&c.url&&CLOUD&&ME&&isAdmin()&&Date.now()-(Date.parse(c.last)||0)>=GS_EVERY-5000)gsSync(false);},30000);
 
 /* ---------- no double entries, one account per client ---------- */
 const cnorm=s=>String(s||'').toLowerCase().replace(/\bprivate\b/g,'pvt').replace(/\blimited\b/g,'ltd').replace(/[^a-z0-9]/g,'');
