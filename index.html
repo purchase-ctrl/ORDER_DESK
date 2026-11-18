@@ -604,6 +604,10 @@ td.act .lnk.del{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
 /* ---------- ledger ---------- */
 .paystmt{display:grid;gap:12px;margin:0 0 16px}.paystmt h3{margin:0 0 2px}.psrow{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}.psrow .f{flex:1 1 280px}.psrow label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}.psrow select{width:100%}
 .hidnote{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;margin:0 0 14px;padding:12px 16px;border-radius:14px;background:var(--warn-bg,#fff4e0);color:var(--warn,#8a5300);border:1px solid currentColor}.hidnote div{display:grid;gap:2px;min-width:0;flex:1 1 320px}.hidnote span{color:var(--ink);font-size:13px}
+.ivl{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.3fr) minmax(0,.7fr) minmax(0,1fr);gap:12px;align-items:end;padding:12px 0;border-top:1px solid var(--line)}
+.ivl label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}.ivd{font-weight:600}.ivd small{display:block;color:var(--muted);font-weight:400}
+.ivchk{font-size:13.5px;padding:10px 14px;border-radius:12px}.ivchk:empty{display:none}.ivchk.ok{background:var(--ok-bg,#d1fadf);color:var(--ok,#067647)}.ivchk.bad{background:var(--bad-bg,#fee4e2);color:var(--bad,#b42318)}
+@media (max-width:760px){.ivl{grid-template-columns:minmax(0,1fr)}}
 .gscard{display:grid;gap:12px;margin:0 0 16px}.gscard h3{margin:0 0 2px}
 .gsgrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:12px}
 .gsgrid .gsw{grid-column:1/-1}.gsgrid label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}
@@ -752,6 +756,7 @@ const GST=0.18, TOL=1;
 
 /* ---------- helpers ---------- */
 const $=(s,r)=>(r||document).querySelector(s);
+const $$=(s,r)=>[...(r||document).querySelectorAll(s)];
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nf2=new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const nf0=new Intl.NumberFormat('en-IN',{maximumFractionDigits:0});
@@ -1213,6 +1218,7 @@ function buildPanel(){
   if(t==='ledger'){$('#panel').innerHTML='<div class="ph"><div><h2>Ledger</h2><p class="muted">One party at a time, invoice by invoice. Check it, save it as a PDF and send it to ask for payment.</p></div></div><div id="ledHost"></div>';renderLedger();return;}
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
+    (t==='invoices'?'<button class="btn" data-act="ivpdf" title="Attach the invoice PDF. The date, invoice number, client, product and quantity are read from it">Attach invoice</button><input type="file" id="ivFile" accept="application/pdf,.pdf" hidden>':'')+
     (t==='payments'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against invoices">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn" data-act="removesheet" title="Remove every entry that was imported from the old Excel / Google Sheet">Remove old sheet data</button>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='payments'?payStmtHTML():'')+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
@@ -1506,6 +1512,7 @@ document.addEventListener('click',e=>{
   else if(act==='dtbl'){S.dashTbl[a.dataset.id]=!S.dashTbl[a.dataset.id];renderDash();}
   else if(act==='dprint'){window.print();}
   else if(act==='openpi'){openPI(a.dataset.po);}
+  else if(act==='ivpdf'){const f=$('#ivFile');if(f)f.click();}
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
   else if(act==='stmtapply'){applyStatement();}
   else if(act==='stmtcancel'){STMT=null;$('#formHost').innerHTML='';}
@@ -2507,6 +2514,119 @@ function cloudImportFile(file){
 }
 document.addEventListener('change',e=>{if(e.target&&e.target.id==='cloudFile'&&e.target.files[0]){cloudImportFile(e.target.files[0]);e.target.value='';}});
 
+/* ---------- Daily Invoicing: attach the invoice PDF (Tally) and fill the entry from it ---------- */
+const PDFJS_V='3.11.174',PDFJS_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/'+PDFJS_V+'/pdf.min.js',PDFJS_WORKER='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/'+PDFJS_V+'/pdf.worker.min.js';
+function loadPdfJs(){
+  return new Promise((res,rej)=>{
+    if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER;return res(window.pdfjsLib);}
+    const sc=document.createElement('script');sc.src=PDFJS_URL;
+    sc.onload=()=>{window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER;res(window.pdfjsLib);};
+    sc.onerror=()=>rej(new Error('Could not load the PDF reader (offline?). Check the internet connection and try again.'));
+    document.head.appendChild(sc);});
+}
+const pnum=x=>parseFloat(String(x||'').replace(/,/g,''))||0;
+async function pdfRows(file){
+  const lib=await loadPdfJs(),doc=await lib.getDocument({data:await file.arrayBuffer()}).promise,pages=[];
+  for(let n=1;n<=Math.min(doc.numPages,3);n++){
+    const pg=await doc.getPage(n),w=pg.view[2],tc=await pg.getTextContent(),rows=[];
+    tc.items.forEach(it=>{const t=String(it.str||'').trim();if(!t)return;const y=it.transform[5],x=it.transform[4];let r=rows.find(q=>Math.abs(q.y-y)<3);if(!r){r={y:y,items:[]};rows.push(r);}r.items.push({x:x,t:t});});
+    rows.sort((a,b)=>b.y-a.y);rows.forEach(r=>{r.items.sort((a,b)=>a.x-b.x);r.text=r.items.map(i=>i.t).join(' ');r.left=r.items.filter(i=>i.x<w*0.52).map(i=>i.t).join(' ');r.right=r.items.filter(i=>i.x>=w*0.52).map(i=>i.t).join(' ');});
+    pages.push(rows);
+  }
+  return pages;
+}
+function parseInvoicePdf(pages){
+  const rows=pages[0]||[];
+  const out={invNo:'',date:'',buyer:'',order:'',lines:[],extra:0,total:0};
+  const mi=rows.find(r=>/[A-Z]{2,6}\/\d{1,6}\/\d{4}-\d{2,4}/.test(r.text)&&!/IRN/.test(r.text));
+  if(mi){const m=mi.text.match(/([A-Z]{2,6}\/\d{1,6}\/\d{4}-\d{2,4})/);out.invNo=m[1];const after=mi.text.slice(mi.text.indexOf(m[1])+m[1].length),dm=after.match(/\b(\d{1,2}-[A-Za-z]{3}-\d{2,4})\b/);if(dm)out.date=stmtDate(dm[1]);}
+  const bi=rows.findIndex(r=>/Buyer\s*[’']?s?\s*\(Bill to\)/i.test(r.left||r.text));
+  if(bi>=0&&rows[bi+1])out.buyer=(rows[bi+1].left||rows[bi+1].text).trim();
+  const oi=rows.findIndex(r=>/Buyer\s*[’']s Order No/i.test(r.right||r.text));
+  if(oi>=0){const parts=[];for(let k=oi;k<Math.min(rows.length,oi+4);k++){const r=rows[k];if(k>oi&&/Dispatch Doc/i.test(r.right))break;let t=r.right.replace(/Buyer\s*[’']s Order No\.?/i,'').replace(/\bDated\b/i,'').replace(/\b\d{1,2}-[A-Za-z]{3}-\d{2,4}\b/,'').trim();if(t)parts.push(t);}out.order=parts.join(' ').trim();}
+  const re=/^\s*\d+\s+(.+?)\s+\d{4,8}\s+([\d,]+(?:\.\d+)?)\s*[A-Za-z]+\s+([\d,]+(?:\.\d+)?)\s+[A-Za-z]+\s+([\d,]+\.\d{2})\s*$/;
+  const seen=new Map();
+  rows.forEach(r=>{
+    const m=r.text.match(re);
+    if(m){const k=m[1].replace(/\s+/g,' ').trim().toLowerCase();let l=seen.get(k);if(!l){l={desc:m[1].replace(/\s+/g,' ').trim(),qty:0,rate:pnum(m[3])};seen.set(k,l);out.lines.push(l);}l.qty+=pnum(m[2]);return;}
+    const e=r.text.match(/(dev\w*\s+charges|freight|forwarding|packing|loading|transport)\b.*?([\d,]+\.\d{2})\s*$/i);if(e)out.extra+=pnum(e[2]);
+    const t=r.text.match(/^Total\b.*?pcs.*?([\d,]+\.\d{2})\s*$/i);if(t&&!out.total)out.total=pnum(t[1]);
+  });
+  return out;
+}
+let IVP=null;
+function ivMatchClient(name){const k=cnorm(name);if(!k)return null;return [...D[S.co].clients.values()].filter(clientShown).find(c=>cnorm(c.name)===k)||[...D[S.co].clients.values()].filter(clientShown).find(c=>{const a=cnorm(c.name);return a.length>4&&(a.includes(k)||k.includes(a));})||null;}
+function ivMatchProduct(clientId,desc){const k=pnorm(desc);const ps=[...D[S.co].products.values()].filter(p=>p.clientId===clientId);return ps.find(p=>pnorm(p.name)===k)||ps.find(p=>{const a=pnorm(p.name);return a&&(a.includes(k)||k.includes(a));})||null;}
+function ivPOs(productId){return [...R.groups.values()].filter(g=>g.pid===productId&&g.po).map(g=>({po:g.po,left:g.poQty>0?g.poQty-g.invQty:null}));}
+function ivLineHTML(l,i,cid){
+  const ps=[...D[S.co].products.values()].filter(p=>p.clientId===cid).sort(byName);
+  const p=ivMatchProduct(cid,l.desc),pos=p?ivPOs(p.id):[];
+  let po=IVP.order&&pos.find(x=>norm(x.po)===norm(IVP.order))?IVP.order:'';
+  if(!po){const open=pos.filter(x=>x.left==null||x.left>0);if(open.length===1)po=open[0].po;}
+  return '<div class="ivl" data-i="'+i+'"><div class="f"><label>On the PDF</label><div class="ivd">'+esc(l.desc)+'<small>'+qty(l.qty)+' pcs at ₹'+nf2.format(l.rate)+'</small></div></div>'+
+    '<div class="f"><label for="iv_p'+i+'">Product *</label><select id="iv_p'+i+'" class="iv_p"><option value="">Choose product</option>'+ps.map(x=>'<option value="'+esc(x.id)+'"'+(p&&p.id===x.id?' selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div>'+
+    '<div class="f"><label for="iv_q'+i+'">Quantity *</label><input id="iv_q'+i+'" class="iv_q" type="number" min="0" step="any" value="'+l.qty+'"></div>'+
+    '<div class="f"><label for="iv_o'+i+'">PI / PO number *</label><input id="iv_o'+i+'" class="iv_o" list="iv_dl'+i+'" autocomplete="off" value="'+esc(po)+'" placeholder="Select or type"><datalist id="iv_dl'+i+'">'+pos.map(x=>'<option value="'+esc(x.po)+'">'+(x.left!=null?esc(qty(x.left))+' pcs left':'')+'</option>').join('')+'</datalist></div></div>';
+}
+function ivRender(){
+  const d=IVP,c=ivMatchClient(d.buyer),cs=[...D[S.co].clients.values()].filter(clientShown).sort(byName);
+  $('#formHost').innerHTML='<form id="ivf" class="form" novalidate><h3>Attach invoice</h3><p class="muted">'+esc(d.file)+' · '+d.lines.length+' product line'+(d.lines.length===1?'':'s')+'. Check what was read from the PDF, choose the PI / PO for each product, then save.'+(d.order?'':' The PDF has no buyer’s order number, so choose the PO yourself.')+'</p>'+
+    '<div class="grid"><div class="f"><label for="iv_no">Invoice number *</label><input id="iv_no" value="'+esc(d.invNo)+'" autocomplete="off"></div>'+
+    '<div class="f"><label for="iv_date">Invoice date *</label><input id="iv_date" type="date" value="'+esc(d.date)+'"></div>'+
+    '<div class="f"><label for="iv_c">Client *</label><select id="iv_c"><option value="">Choose client</option>'+cs.map(x=>'<option value="'+esc(x.id)+'"'+(c&&c.id===x.id?' selected':'')+'>'+esc(x.name)+(x.brand?' · '+esc(x.brand):'')+'</option>').join('')+'</select>'+(c?'':'<small class="muted">“'+esc(d.buyer)+'” is not in your Client / Brand list. Pick the client, or add it first.</small>')+'</div>'+
+    '<div class="f"><label for="iv_x">Freight + development charges</label><input id="iv_x" type="number" min="0" step="any" value="'+d.extra+'"></div></div>'+
+    '<div id="ivlines">'+(c?d.lines.map((l,i)=>ivLineHTML(l,i,c.id)).join(''):'<p class="muted">Choose the client to match the products.</p>')+'</div>'+
+    '<div id="ivchk" class="ivchk" role="status"></div>'+
+    '<div class="fa"><button class="btn primary" type="submit">Save invoice</button><button class="btn" type="button" data-act="cancel">Cancel</button><span id="ferr" class="ferr" role="alert"></span></div></form>';
+  ivCheck();
+}
+function ivCheck(){
+  const el=$('#ivchk');if(!el||!IVP)return;
+  let non=0,warn=[];
+  $$('.ivl').forEach(r=>{const i=+r.dataset.i,p=D[S.co].products.get(r.querySelector('.iv_p').value),q=+r.querySelector('.iv_q').value||0;if(p){non+=q*(+p.cost||0);if(Math.abs((+p.cost||0)-IVP.lines[i].rate)>0.005)warn.push(esc(p.name)+': the PDF rate is ₹'+nf2.format(IVP.lines[i].rate)+', the product cost here is ₹'+nf2.format(+p.cost||0));}});
+  const total=(non+(+($('#iv_x')||{}).value||0))*(1+GST);
+  if(!IVP.total||!non){el.textContent='';return;}
+  const diff=total-IVP.total,ok=Math.abs(diff)<=2;
+  el.className='ivchk '+(ok?'ok':'bad');
+  el.innerHTML=(ok?'Matches the PDF total: ':'Does not match the PDF. ')+'this app works out <b>'+inr(total)+'</b> with GST, the PDF says <b>'+inr(IVP.total)+'</b>'+(ok?'.':' (difference '+inr(Math.abs(diff))+'). Check the quantity, product and charges.')+(warn.length?'<br>'+warn.join('<br>'):'');
+}
+async function ivStart(file){
+  try{
+    toast('Reading the invoice…');
+    const pages=await pdfRows(file),d=parseInvoicePdf(pages);
+    if(!d.invNo&&!d.lines.length)throw new Error('Could not find an invoice in this PDF. Use Add invoice to enter it by hand.');
+    d.file=file.name;IVP=d;S.form=null;ivRender();
+    const f=$('#ivf');f&&f.scrollIntoView&&f.scrollIntoView({block:'nearest'});
+  }catch(e){toast((e&&e.message)||'Could not read this PDF.');}
+}
+document.addEventListener('change',e=>{
+  const t=e.target;if(!t)return;
+  if(t.id==='ivFile'&&t.files&&t.files[0]){ivStart(t.files[0]);t.value='';return;}
+  if(!IVP||!t.closest||!t.closest('#ivf'))return;
+  if(t.id==='iv_c'){const c=t.value;$('#ivlines').innerHTML=c?IVP.lines.map((l,i)=>ivLineHTML(l,i,c)).join(''):'<p class="muted">Choose the client to match the products.</p>';ivCheck();}
+  else if(t.classList.contains('iv_p')){const r=t.closest('.ivl'),pos=t.value?ivPOs(t.value):[];r.querySelector('datalist').innerHTML=pos.map(x=>'<option value="'+esc(x.po)+'">'+(x.left!=null?esc(qty(x.left))+' pcs left':'')+'</option>').join('');const o=r.querySelector('.iv_o');if(!o.value){const open=pos.filter(x=>x.left==null||x.left>0);if(open.length===1)o.value=open[0].po;}ivCheck();}
+});
+document.addEventListener('input',e=>{if(IVP&&e.target&&e.target.closest&&e.target.closest('#ivf')&&(e.target.classList.contains('iv_q')||e.target.id==='iv_x'))ivCheck();});
+document.addEventListener('submit',async e=>{
+  if(!e.target||e.target.id!=='ivf')return;e.preventDefault();
+  const er=$('#ferr'),no=$('#iv_no').value.trim(),date=$('#iv_date').value,cid=$('#iv_c').value,extra=+$('#iv_x').value||0;
+  if(!no){er.textContent='Invoice number is required.';return;}
+  if(!date){er.textContent='Enter the invoice date.';return;}
+  if(!cid){er.textContent='Choose the client.';return;}
+  const rows=[];
+  for(const r of $$('.ivl')){
+    const pid=r.querySelector('.iv_p').value,q=+r.querySelector('.iv_q').value,po=r.querySelector('.iv_o').value.trim();
+    if(!pid){er.textContent='Choose the product for every line.';return;}
+    if(!(q>0)){er.textContent='Enter the quantity for every line.';return;}
+    if(!po){er.textContent='Enter the PI / PO number for every line.';return;}
+    if([...D[S.co].invoices.values()].some(i=>norm(i.invNo)===norm(no)&&i.productId===pid&&norm(i.po)===norm(po))){er.textContent='This invoice is already entered for this PI / PO and product.';return;}
+    rows.push({id:uid()+rows.length,date:date,invNo:no,productId:pid,po:po,qty:q,extra:rows.length?0:extra,paid:0});
+  }
+  if(!rows.length){er.textContent='There is no product line to save.';return;}
+  er.textContent='Saving…';
+  for(const row of rows){if(!(await put('invoices',row))){er.textContent='';return;}}
+  IVP=null;S.form=null;toast('Invoice '+no+' saved');buildPanel();
+});
 /* ---------- no double entries, one account per client ---------- */
 const cnorm=s=>String(s||'').toLowerCase().replace(/\bprivate\b/g,'pvt').replace(/\blimited\b/g,'ltd').replace(/[^a-z0-9]/g,'');
 const pnorm=s=>String(s||'').replace(/\s+/g,' ').trim().toLowerCase();
