@@ -1214,7 +1214,7 @@ function buildPanel(){
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='payments'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against invoices">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
-    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button>':'')+
+    (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn" data-act="removesheet" title="Remove every entry that was imported from the old Excel / Google Sheet">Remove old sheet data</button>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='payments'?payStmtHTML():'')+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
   renderList();
@@ -1498,6 +1498,7 @@ document.addEventListener('click',e=>{
   else if(act==='cloudimport'){cloudImport();}
   else if(act==='mybk'){myBackup(a.dataset.fmt);}
   else if(act==='mergeclients'){mergeClients();}
+  else if(act==='removesheet'){removeSheetData();}
   else if(act==='cloudfile'){const f=$('#cloudFile');if(f)f.click();}
   else if(act==='pname'){if(isAdmin())showPiName(a.dataset.id);}
   else if(act==='fybk'){fyBackup(a.dataset.mode);}
@@ -2559,6 +2560,53 @@ async function mergeClients(){
     }
   }
   toast('Merged '+n+' duplicate account'+(n===1?'':'s'));
+}
+/* ---------- Admin: remove everything that was imported from the old Excel / Google Sheet ---------- */
+const isSheetId=id=>/^(xl|gs)_[a-z]_/i.test(String(id||''));
+function sheetPlan(){
+  const out=[];
+  COS.forEach(c=>{
+    const d=D[c.key];
+    const sheet={};SECS.forEach(sec=>{sheet[sec]=new Set([...d[sec].values()].filter(r=>isSheetId(r.id)).map(r=>r.id));});
+    /* things that were NOT imported but hang on an imported product or invoice are kept, together with that product and its client */
+    const keepP=new Set();
+    ['advances','invoices','dispatches'].forEach(sec=>d[sec].forEach(r=>{if(!sheet[sec].has(r.id)&&sheet.products.has(r.productId))keepP.add(r.productId);}));
+    const gone={};SECS.forEach(sec=>gone[sec]=new Set(sheet[sec]));
+    keepP.forEach(id=>gone.products.delete(id));
+    const keepC=new Set();d.products.forEach(p=>{if(!gone.products.has(p.id))keepC.add(p.clientId);});
+    keepC.forEach(id=>gone.clients.delete(id));
+    /* payments and dispatches of an invoice or product that goes away go with it */
+    d.invoices.forEach(r=>{if(gone.products.has(r.productId))gone.invoices.add(r.id);});
+    d.payments.forEach(r=>{if(gone.invoices.has(r.invoiceId))gone.payments.add(r.id);});
+    d.dispatches.forEach(r=>{if(gone.products.has(r.productId))gone.dispatches.add(r.id);});
+    d.advances.forEach(r=>{if(gone.products.has(r.productId))gone.advances.add(r.id);});
+    SECS.forEach(sec=>gone[sec].forEach(id=>{if(d[sec].has(id))out.push({co:c.key,sec:sec,id:id});}));
+  });
+  return out;
+}
+async function removeSheetData(){
+  if(!CLOUD||!ME||!isAdmin())return;
+  const plan=sheetPlan();
+  if(!plan.length){toast('No entries from the old sheet were found.');return;}
+  const per=COS.map(c=>{const n=plan.filter(x=>x.co===c.key);return n.length?c.name+': '+SECS.map(sec=>{const k=n.filter(x=>x.sec===sec).length;return k?k+' '+sec:'';}).filter(Boolean).join(', '):'';}).filter(Boolean).join('\n');
+  if(!confirm('Remove '+plan.length+' entries that came from the old Excel / Google Sheet?\n\n'+per+'\n\nA backup file of these entries is downloaded first. Entries from the PI generator and anything you typed in yourself are not touched.\n\nThis cannot be undone from the app (only by uploading the backup file).'))return;
+  try{
+    const out={app:'order-desk',version:1,exported:new Date().toISOString(),by:ME.user,note:'Entries removed from the old sheet',data:{}};
+    COS.forEach(c=>{out.data[c.key]={};SECS.forEach(sec=>{out.data[c.key][sec]=plan.filter(x=>x.co===c.key&&x.sec===sec).map(x=>D[c.key][sec].get(x.id)).filter(Boolean);});});
+    saveBlob('removed-sheet-data-'+todayStr()+'.json',JSON.stringify(out,null,1),'application/json');
+    await new Promise(r=>setTimeout(r,600));
+    let n=0;
+    for(const c of COS)for(const sec of SECS){
+      const ids=plan.filter(x=>x.co===c.key&&x.sec===sec).map(x=>x.id);
+      for(let i=0;i<ids.length;i+=40){
+        const part=ids.slice(i,i+40);
+        const res=await sbRest('DELETE','od_records?company=eq.'+c.key+'&section=eq.'+sec+'&id=in.('+part.map(encodeURIComponent).join(',')+')',null,'return=representation');
+        n+=(res||[]).length;
+      }
+    }
+    await cloudLoad();buildAll();
+    toast('Removed '+n+' entries from the old sheet');
+  }catch(e){if(!cloudGone(e))toast('Could not remove: '+((e&&e.message)||'unknown error'));}
 }
 /* ---------- every user can back up their own data ---------- */
 const BK_KEY=()=>'orderdesk:mybk:'+(ME?ME.id:'');
