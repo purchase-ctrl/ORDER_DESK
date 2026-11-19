@@ -507,6 +507,7 @@ tbody tr:hover td{background:var(--head)}
 .dt .v{font-size:clamp(18px,1.9vw,23px);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin:1px 0}
 .dt .s{font-size:12.5px;color:var(--muted)}
 /* cards */
+.ptcard .ptxt{margin:2px 0 6px;font-size:1.02rem;line-height:1.5;color:var(--ink)}.ptcard .ptarea{width:100%;min-height:84px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font:inherit;background:var(--surface);color:var(--ink);resize:vertical}.ptcard .fa{margin-top:10px}
 .dcard{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:20px 22px;box-shadow:var(--shadow);min-width:0}
 .dcard>.dh{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;margin-bottom:4px}
 .dcard h3{margin:0;font-size:17px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
@@ -1514,6 +1515,9 @@ document.addEventListener('click',e=>{
   else if(act==='ivpdf'){const f=$('#ivFile');if(f)f.click();}
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
   else if(act==='padv'){S.form=null;paStart();}
+  else if(act==='ptedit'){if(isAdmin()){S.ptEdit=S.dashClient;renderDash();const t=$('#pt_txt');t&&t.focus();}}
+  else if(act==='ptcancel'){S.ptEdit=null;renderDash();}
+  else if(act==='ptsave'){const cl=D[S.co].clients.get(S.dashClient),t=$('#pt_txt');if(isAdmin()&&cl&&t){const v=t.value.replace(/\s+/g,' ').trim();put('clients',Object.assign({},cl,{payTerms:v,payTermsBy:v?'admin':'pi'})).then(ok=>{if(ok){S.ptEdit=null;buildAll();toast(v?'Payment terms saved':'Payment terms cleared');}});}}
   else if(act==='stmtapply'){applyStatement();}
   else if(act==='stmtcancel'){STMT=null;$('#formHost').innerHTML='';}
   else if(act==='add'){S.form={sec:S.tab,id:null};showForm();}
@@ -1800,11 +1804,13 @@ async function syncPI(manual){
       const r=await sbRest('POST','rpc/od_sync_pis',{});
       await cloudLoad();
       const nrp=await cloudFillRefPo();
+      const ntm=await cloudFillTerms();if(ntm)await cloudLoad();
       refresh();
       const n=r?(+r.clients||0)+(+r.products||0)+(+r.advances||0):0;
       if(nrp)toast('PI sync: '+nrp+' reference PO(s) filled'+(n?' · '+n+' new entr'+(n===1?'y':'ies'):''));
       else
       if(n)toast('PI sync: '+(r.clients||0)+' new client(s), '+(r.products||0)+' new product(s), '+(r.advances||0)+' advance entr'+((r.advances||0)===1?'y':'ies'));
+      else if(ntm)toast('PI sync: payment terms updated for '+ntm+' client'+(ntm===1?'':'s'));
       else if(manual)toast('PI sync: nothing new');
     }catch(e){if(!cloudGone(e)&&manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
     finally{piBusy=false;}
@@ -1814,7 +1820,9 @@ async function syncPI(manual){
   try{
     const piGet=cols=>fetch(PI_URL+'/rest/v1/pis?select='+cols+'&order=created_at.asc&limit=1000',{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});
     const BASE='id,created_by,company,pi_number,buyer_name,buyer_contact,buyer_phone,buyer_email,buyer_gst,buyer_address,pi_date,items';
-    let res=await piGet(BASE+',brand_name,ref_po');
+    let res=await piGet(BASE+',created_at,notes,payment_terms,brand_name,ref_po');
+    if(res.status===400)res=await piGet(BASE+',created_at,notes,brand_name,ref_po');
+    if(res.status===400)res=await piGet(BASE+',brand_name,ref_po');
     /* If the PI database lacks the brand_name or ref_po column, carry on without them instead of failing the whole sync. */
     if(res.status===400)res=await piGet(BASE+',brand_name');
     if(res.status===400)res=await piGet(BASE);
@@ -1881,7 +1889,9 @@ async function syncPI(manual){
       touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});
       piSave(seen);
     }
+    const tch=applyPiTerms(rows);if(tch.length){tch.forEach(x=>touched.add(x.co+'|clients'));if(!CLOUD)touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});}
     if(touched.size)buildAll();
+    if(tch.length&&!(nc||np||nb||na||upd.length))toast('PI sync: payment terms updated for '+tch.length+' client'+(tch.length===1?'':'s'));
     if(nc||np||nb||na||upd.length){toast('PI sync: '+nc+' new client(s), '+np+' new product(s)'+(nb?', '+nb+' brand(s) filled':'')+(upd.length?', '+upd.length+' reference PO(s) filled':'')+(na?', '+na+' advance entr'+(na===1?'y':'ies'):''));}
     else if(manual)toast('PI sync: nothing new ('+rows.length+' PIs checked)');
   }catch(e){if(!cloudGone(e)&&manual)toast('PI sync failed: '+((e&&e.message)||'network error'));}
@@ -2169,7 +2179,7 @@ function renderDash(){
   let h='<div class="dash"><section class="dhero" aria-label="Overview"><div class="dhero-top"><span class="eyebrow">Dashboard · '+esc(coName)+'</span>'+picker+'</div><div class="dhero-body">'+
     '<div class="dwho"><div class="dav" aria-hidden="true">'+(c?esc(ini(c.name)):'All')+'</div><div style="min-width:0"><h2>'+(c?esc(c.name):'All clients')+'</h2><div class="dmeta">'+bits.map(b=>'<span>'+esc(b)+'</span>').join('')+(c&&!bits.length?'<span>No contact details saved</span>':'')+'</div></div></div>'+
     '<div class="dring">'+donut([{v:advT,cls:'h1',tip:'Advance received '+inr(advT)},{v:invT,cls:'h2',tip:'Invoice payments '+inr(invT)},{v:left,cls:'hl',tip:'Still to receive '+inr(left)}],col+'%','collected',150,'Collected '+col+' percent of order value with GST '+inr(X.value))+
-    '<div class="dhstats"><div><b>'+inr(X.value)+'</b><span>Order value (with GST)</span></div><div class="a"><b>'+inr(advT)+'</b><span><i></i>Advance received</span></div><div class="b"><b>'+inr(invT)+'</b><span><i></i>Invoice payments</span></div><div class="c"><b>'+inr(left)+'</b><span><i></i>Still to receive</span></div></div></div></div></section>';
+    '<div class="dhstats"><div><b>'+inr(X.value)+'</b><span>Order value (with GST)</span></div><div class="a"><b>'+inr(advT)+'</b><span><i></i>Advance received</span></div><div class="b"><b>'+inr(invT)+'</b><span><i></i>Invoice payments</span></div><div class="c"><b>'+inr(left)+'</b><span><i></i>Still to receive</span></div></div></div></div></section>'+ptCardHTML(c);
   const nOpen=X.open.length,nOver=X.open.filter(X.isDue).length;
   const tile=(cls,ic,l,v,s)=>'<div class="dt '+cls+'"><div class="ic" aria-hidden="true">'+DI[ic]+'</div><div><div class="l">'+l+'</div><div class="v">'+esc(v)+'</div><div class="s">'+esc(s)+'</div></div></div>';
   h+='<section class="dtiles" aria-label="Summary">'+tile('t-ok','money','Payments received',inr(X.received),col+'% of order value (with GST)')+tile('t-warn','clock','Outstanding on invoices',inr(X.outstanding),nOpen+' open invoice'+(nOpen===1?'':'s'))+
@@ -2702,6 +2712,44 @@ document.addEventListener('submit',async e=>{
   for(const x of sp.rows){if(await put('payments',{invoiceId:x.inv.id,date:PA.date,amount:x.amt,mode:PA.mode,ref:PA.ref,note:('Payment advice · '+PA.po+' · split by order value'+(PA.note?' · '+PA.note:'')),advice:gid}))n++;}
   PA=null;S.form=null;toast('Payment advice saved: '+n+' payment'+(n===1?'':'s')+' recorded across '+sp.prods.filter(o=>o.amt>0).length+' product'+(sp.prods.filter(o=>o.amt>0).length===1?'':'s'));buildPanel();
 });
+
+/* ---------- client payment terms: filled from the "Payment:" line of each PI's Terms & Conditions (or its Payment terms box); admin can edit ---------- */
+function piTermsOf(pi){
+  const m=String(pi.notes||'').match(/^\s*\d*\s*\.?\s*Payment\s*:\s*(.+)$/im);
+  let v=m?m[1].replace(/\s+/g,' ').trim():'';
+  if(!v)v=String(pi.payment_terms||'').replace(/\s+/g,' ').trim();
+  return v;
+}
+/* Latest PI of each client wins. Terms an admin typed by hand are never overwritten. Returns the clients that changed. */
+function applyPiTerms(rows){
+  const best=new Map();
+  (rows||[]).forEach(pi=>{
+    const v=piTermsOf(pi),name=String(pi.buyer_name||'').trim();if(!v||!name)return;
+    const co=piCo(pi.company);
+    const cl=[...D[co].clients.values()].find(c=>norm(c.name)===norm(name)||(pi.buyer_gst&&c.gstin&&norm(c.gstin)===norm(pi.buyer_gst)));
+    if(!cl)return;
+    const k=co+'|'+cl.id,st=String(pi.pi_date||'')+'|'+String(pi.created_at||''),b=best.get(k);
+    if(!b||st>=b.st)best.set(k,{co:co,cl:cl,v:v,st:st});
+  });
+  const out=[];
+  best.forEach(b=>{if(b.cl.payTermsBy==='admin'||b.cl.payTerms===b.v)return;const n=Object.assign({},b.cl,{payTerms:b.v,payTermsBy:'pi'});D[b.co].clients.set(n.id,n);out.push({co:b.co,c:n});});
+  return out;
+}
+async function cloudFillTerms(){
+  let rows=null;
+  try{rows=await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes,payment_terms&limit=1000');}
+  catch(e){try{rows=await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes&limit=1000');}catch(e2){return 0;}}
+  const ch=applyPiTerms(rows);let n=0;
+  for(const x of ch){try{await sbRest('PATCH','od_records?company=eq.'+x.co+'&section=eq.clients&id=eq.'+encodeURIComponent(x.c.id),{data:x.c},'return=minimal');n++;}catch(e){}}
+  return n;
+}
+function ptCardHTML(c){
+  if(!c)return '';
+  const ed=isAdmin()&&S.ptEdit===c.id,v=String(c.payTerms||'').trim();
+  return '<section class="dcard ptcard" aria-label="Payment terms"><div class="dh"><h3>Payment terms</h3>'+(isAdmin()&&!ed?'<div class="bt"><button type="button" class="btn sm" data-act="ptedit">'+(v?'Edit':'Add terms')+'</button></div>':'')+'</div>'+
+    (ed?'<label class="sr" for="pt_txt">Payment terms</label><textarea id="pt_txt" rows="3" class="ptarea" placeholder="e.g. 50% advance at the time of order confirmation. 50% pre-dispatch.">'+esc(v)+'</textarea><div class="fa"><button type="button" class="btn primary" data-act="ptsave">Save terms</button><button type="button" class="btn" data-act="ptcancel">Cancel</button></div>'
+      :(v?'<p class="ptxt">'+esc(v)+'</p><p class="dsub">'+(c.payTermsBy==='admin'?'Set by admin.':'Taken from the Terms &amp; Conditions of the latest PI in PI Desk.')+'</p>':'<p class="dsub">No payment terms yet. They fill in from the PI Desk Terms &amp; Conditions after the client\'s first PI, or an admin can add them here.</p>'))+'</section>';
+}
 /* ---------- no double entries, one account per client ---------- */
 const cnorm=s=>String(s||'').toLowerCase().replace(/\bprivate\b/g,'pvt').replace(/\blimited\b/g,'ltd').replace(/[^a-z0-9]/g,'');
 const pnorm=s=>String(s||'').replace(/\s+/g,' ').trim().toLowerCase();
