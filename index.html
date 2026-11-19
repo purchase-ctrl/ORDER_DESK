@@ -2113,9 +2113,9 @@ function dashData(cid){
   R.groups.forEach(g=>{
     if(!inScope(g.c))return;
     const k=g.c.id+'|'+norm(g.po);
-    let o=po.get(k);if(!o){o={k:k,po:g.po,client:g.c,products:new Set(),qty:0,value:0,adv:0,invPaid:0,invQty:0,disp:0,piDate:''};po.set(k,o);}
+    let o=po.get(k);if(!o){o={k:k,po:g.po,client:g.c,products:new Set(),qty:0,base:0,value:0,adv:0,invPaid:0,invQty:0,disp:0,piDate:''};po.set(k,o);}
     if(g.p)o.products.add(g.p.name);
-    o.qty+=g.poQty||0;o.value+=g.orderValue||0;o.adv+=g.received||0;o.invQty+=g.invQty||0;o.disp+=g.dispQty||0;
+    o.qty+=g.poQty||0;o.base+=g.orderValue||0;o.value+=(g.orderValue||0)*(1+GST);o.adv+=g.received||0;o.invQty+=g.invQty||0;o.disp+=g.dispQty||0;
     if(g.piDate&&(!o.piDate||g.piDate<o.piDate))o.piDate=g.piDate;
   });
   const invs=R.inv.filter(i=>inScope(i.c));
@@ -2125,7 +2125,7 @@ function dashData(cid){
   const isDue=i=>i.due&&daysBetween(today,i.due)<0;
   const prods=[...D[S.co].products.values()].filter(p=>!cid||p.clientId===cid).sort((a,b)=>String(a.clientId).localeCompare(String(b.clientId))||byName(a,b));
   return {clients:clients,pos:pos,invs:invs,open:open,isDue:isDue,prods:prods,today:today,
-    value:pos.reduce((a,o)=>a+o.value,0),received:pos.reduce((a,o)=>a+o.adv+o.invPaid,0),
+    value:pos.reduce((a,o)=>a+o.value,0),base:pos.reduce((a,o)=>a+o.base,0),received:pos.reduce((a,o)=>a+o.adv+o.invPaid,0),
     outstanding:open.reduce((a,i)=>a+i.pend,0),overdue:open.filter(isDue).reduce((a,i)=>a+i.pend,0),
     toShip:pos.filter(o=>o.invQty>0&&o.qty>0).reduce((a,o)=>a+Math.max(0,o.qty-o.disp),0)};
 }
@@ -2166,11 +2166,11 @@ function renderDash(){
   const bits=c?[c.brand&&('Brand: '+c.brand),c.gstin&&('GSTIN '+c.gstin),c.contact,c.phone,c.email,c.city].filter(Boolean):[X.clients.length+' clients',X.prods.length+' products',X.pos.length+(X.pos.length===1?' PI / PO':' PIs / POs')];
   let h='<div class="dash"><section class="dhero" aria-label="Overview"><div class="dhero-top"><span class="eyebrow">Dashboard · '+esc(coName)+'</span>'+picker+'</div><div class="dhero-body">'+
     '<div class="dwho"><div class="dav" aria-hidden="true">'+(c?esc(ini(c.name)):'All')+'</div><div style="min-width:0"><h2>'+(c?esc(c.name):'All clients')+'</h2><div class="dmeta">'+bits.map(b=>'<span>'+esc(b)+'</span>').join('')+(c&&!bits.length?'<span>No contact details saved</span>':'')+'</div></div></div>'+
-    '<div class="dring">'+donut([{v:advT,cls:'h1',tip:'Advance received '+inr(advT)},{v:invT,cls:'h2',tip:'Invoice payments '+inr(invT)},{v:left,cls:'hl',tip:'Still to receive '+inr(left)}],col+'%','collected',150,'Collected '+col+' percent of order value '+inr(X.value))+
-    '<div class="dhstats"><div><b>'+inr(X.value)+'</b><span>Order value</span></div><div class="a"><b>'+inr(advT)+'</b><span><i></i>Advance received</span></div><div class="b"><b>'+inr(invT)+'</b><span><i></i>Invoice payments</span></div><div class="c"><b>'+inr(left)+'</b><span><i></i>Still to receive</span></div></div></div></div></section>';
+    '<div class="dring">'+donut([{v:advT,cls:'h1',tip:'Advance received '+inr(advT)},{v:invT,cls:'h2',tip:'Invoice payments '+inr(invT)},{v:left,cls:'hl',tip:'Still to receive '+inr(left)}],col+'%','collected',150,'Collected '+col+' percent of order value with GST '+inr(X.value))+
+    '<div class="dhstats"><div><b>'+inr(X.value)+'</b><span>Order value (with GST)</span></div><div class="a"><b>'+inr(advT)+'</b><span><i></i>Advance received</span></div><div class="b"><b>'+inr(invT)+'</b><span><i></i>Invoice payments</span></div><div class="c"><b>'+inr(left)+'</b><span><i></i>Still to receive</span></div></div></div></div></section>';
   const nOpen=X.open.length,nOver=X.open.filter(X.isDue).length;
   const tile=(cls,ic,l,v,s)=>'<div class="dt '+cls+'"><div class="ic" aria-hidden="true">'+DI[ic]+'</div><div><div class="l">'+l+'</div><div class="v">'+esc(v)+'</div><div class="s">'+esc(s)+'</div></div></div>';
-  h+='<section class="dtiles" aria-label="Summary">'+tile('t-ok','money','Payments received',inr(X.received),col+'% of order value')+tile('t-warn','clock','Outstanding on invoices',inr(X.outstanding),nOpen+' open invoice'+(nOpen===1?'':'s'))+
+  h+='<section class="dtiles" aria-label="Summary">'+tile('t-ok','money','Payments received',inr(X.received),col+'% of order value (with GST)')+tile('t-warn','clock','Outstanding on invoices',inr(X.outstanding),nOpen+' open invoice'+(nOpen===1?'':'s'))+
     tile(X.overdue>TOL?'t-bad':'','alert','Overdue',inr(X.overdue),nOver+' invoice'+(nOver===1?'':'s')+' past due date')+tile('t-ind','truck','Yet to dispatch',qty(X.toShip)+' units','on invoiced POs')+'</section>';
   /* clients overview (all clients view) */
   if(!cid){
@@ -2178,21 +2178,21 @@ function renderDash(){
     h+='<section class="dcard"><div class="dh"><h3>Clients<span class="cnt">'+rows.length+'</span></h3></div><p class="dsub">Tap a client to see only their products, payments and dispatch.</p><div class="dcards">'+
       rows.map(r=>{const p=pc0(r.d.received,r.d.value);return '<button type="button" class="ccard" data-act="dclient" data-id="'+esc(r.k.id)+'" aria-label="Open '+esc(r.k.name)+'"><div class="cn"><span class="dav" aria-hidden="true">'+esc(ini(r.k.name))+'</span><span>'+esc(r.k.name)+'</span><i class="go" aria-hidden="true">'+DI.go+'</i></div>'+
         dRow('<span class="sub2">Collected</span>',[{v:r.d.received,cls:'s1',tip:r.k.name+' · Received '+inr(r.d.received)+' of '+inr(r.d.value)}],Math.max(1,r.d.value,r.d.received),'<strong>'+p+'%</strong>')+
-        '<div class="row2"><span>Order value <b>'+inr(r.d.value)+'</b></span><span>'+(r.d.overdue>TOL?'<span class="pctchip bad">'+inr(r.d.overdue)+' overdue</span>':'Nothing overdue')+'</span></div></button>';}).join('')+'</div></section>';
+        '<div class="row2"><span>Order value (with GST) <b>'+inr(r.d.value)+'</b></span><span>'+(r.d.overdue>TOL?'<span class="pctchip bad">'+inr(r.d.overdue)+' overdue</span>':'Nothing overdue')+'</span></div></button>';}).join('')+'</div></section>';
   }
   /* product list */
-  const pRows=X.prods.map(p=>{const gs=R.groups.filter(g=>g.pid===p.id);return {p:p,c:D[S.co].clients.get(p.clientId),pos:new Set(gs.map(g=>norm(g.po))).size,qty:gs.reduce((a,g)=>a+(g.poQty||0),0),val:gs.reduce((a,g)=>a+(g.orderValue||0),0)};});
+  const pRows=X.prods.map(p=>{const gs=R.groups.filter(g=>g.pid===p.id);return {p:p,c:D[S.co].clients.get(p.clientId),pos:new Set(gs.map(g=>norm(g.po))).size,qty:gs.reduce((a,g)=>a+(g.poQty||0),0),val:gs.reduce((a,g)=>a+(g.orderValue||0),0)*(1+GST)};});
   h+='<section class="dcard"><div class="dh"><h3>Product list<span class="cnt">'+pRows.length+'</span></h3></div><p class="dsub">Final cost, advance and payment terms for each product, with how much has been ordered.</p>'+(pRows.length?'<div class="dcards pscroll" tabindex="0" aria-label="Product list">'+
     pRows.map(r=>{const ap=advPctOf(r.p);return '<article class="pcard">'+(cid?'':'<div class="pc">'+esc(r.c?r.c.name:'—')+'</div>')+'<div class="pn">'+esc(r.p.name)+'</div><div class="pcost">'+inr(+r.p.cost||0)+'<small>final cost</small></div>'+
       '<div class="pchips"><span>Advance '+(ap==null?'—':pct(ap))+'</span><span>Terms '+qty(+r.p.terms||0)+' days</span></div>'+
-      '<div class="pfoot"><span><b>'+r.pos+'</b>PI / PO</span><span><b>'+qty(r.qty)+'</b>units</span><span><b>'+inr(r.val)+'</b>order value</span></div></article>';}).join('')+'</div>':'<div class="empty"><h3>No products</h3><p class="muted">Add products in the Products tab.</p></div>')+'</section>';
+      '<div class="pfoot"><span><b>'+r.pos+'</b>PI / PO</span><span><b>'+qty(r.qty)+'</b>units</span><span><b>'+inr(r.val)+'</b>order value (with GST)</span></div></article>';}).join('')+'</div>':'<div class="empty"><h3>No products</h3><p class="muted">Add products in the Products tab.</p></div>')+'</section>';
   /* chart 1: payments against PI / PO */
   const pp=X.pos.filter(o=>o.value>0||o.adv+o.invPaid>0).sort((a,b)=>(b.adv+b.invPaid)-(a.adv+a.invPaid)||String(a.po).localeCompare(String(b.po)));
   const lab=o=>polink(o.po)+'<span class="sub2">'+esc((cid?'':o.client.name+' · ')+[...o.products].slice(0,2).join(', ')+(o.products.size>2?' +'+(o.products.size-2):''))+'</span>';
-  const r1=pp.map(o=>{const rc=o.adv+o.invPaid,p=pc0(rc,o.value);return dRow(lab(o),[{v:o.adv,cls:'s1',tip:o.po+' · Advance received '+inr(o.adv)},{v:o.invPaid,cls:'s2',tip:o.po+' · Invoice payments '+inr(o.invPaid)}],Math.max(1,o.value,rc),'<strong>'+inr(rc)+'<span class="pctchip'+(p>=100?' ok':'')+'">'+p+'%</span></strong><span class="sub2">of '+inr(o.value)+' order value</span>','Order value '+inr(o.value));}).join('');
-  const t1='<div class="tw"><table class="tight"><thead><tr><th>PI / PO</th>'+(cid?'':'<th>Client</th>')+'<th class="r">Order value</th><th class="r">Advance received</th><th class="r">Invoice payments</th><th class="r">Total received</th></tr></thead><tbody>'+pp.map(o=>'<tr><td class="mono">'+esc(o.po)+'</td>'+(cid?'':'<td>'+esc(o.client.name)+'</td>')+'<td class="n">'+inr(o.value)+'</td><td class="n">'+inr(o.adv)+'</td><td class="n">'+inr(o.invPaid)+'</td><td class="n">'+inr(o.adv+o.invPaid)+'</td></tr>').join('')+'</tbody></table></div>';
-  const s1='<div class="sumline"><div><span>Order value</span><b>'+inr(X.value)+'</b></div><div><span>Received</span><b>'+inr(X.received)+'</b></div><div><span>Still to receive</span><b>'+inr(left)+'</b></div></div>';
-  h+='<div class="dgrid">'+dChart('pay','Payments against each PI / PO','One bar per order. The full bar is the order value; the colour is what has been received so far.',[{cls:'s1',t:'Advance received'},{cls:'s2',t:'Invoice payments'},{cls:'s0',t:'Still to receive'}],r1,t1,['No payments yet','Orders appear here once a PI / PO has an advance or an invoice.'],s1,true);
+  const r1=pp.map(o=>{const rc=o.adv+o.invPaid,p=pc0(rc,o.value);return dRow(lab(o),[{v:o.adv,cls:'s1',tip:o.po+' · Advance received '+inr(o.adv)},{v:o.invPaid,cls:'s2',tip:o.po+' · Invoice payments '+inr(o.invPaid)}],Math.max(1,o.value,rc),'<strong>'+inr(rc)+'<span class="pctchip'+(p>=100?' ok':'')+'">'+p+'%</span></strong><span class="sub2">of '+inr(o.value)+' order value (with GST)</span>','Order value (with GST) '+inr(o.value));}).join('');
+  const t1='<div class="tw"><table class="tight"><thead><tr><th>PI / PO</th>'+(cid?'':'<th>Client</th>')+'<th class="r">Order value (with GST)</th><th class="r">Advance received</th><th class="r">Invoice payments</th><th class="r">Total received</th></tr></thead><tbody>'+pp.map(o=>'<tr><td class="mono">'+esc(o.po)+'</td>'+(cid?'':'<td>'+esc(o.client.name)+'</td>')+'<td class="n">'+inr(o.value)+'</td><td class="n">'+inr(o.adv)+'</td><td class="n">'+inr(o.invPaid)+'</td><td class="n">'+inr(o.adv+o.invPaid)+'</td></tr>').join('')+'</tbody></table></div>';
+  const s1='<div class="sumline"><div><span>Before GST</span><b>'+inr(X.base)+'</b></div><div><span>GST '+Math.round(GST*100)+'%</span><b>'+inr(X.value-X.base)+'</b></div><div><span>Order value (with GST)</span><b>'+inr(X.value)+'</b></div><div><span>Received</span><b>'+inr(X.received)+'</b></div><div><span>Still to receive</span><b>'+inr(left)+'</b></div></div>';
+  h+='<div class="dgrid">'+dChart('pay','Payments against each PI / PO','One bar per order. The full bar is the order value with GST; the colour is what has been received so far.',[{cls:'s1',t:'Advance received'},{cls:'s2',t:'Invoice payments'},{cls:'s0',t:'Still to receive'}],r1,t1,['No payments yet','Orders appear here once a PI / PO has an advance or an invoice.'],s1,true);
   /* chart 2: dispatch vs pending */
   const dd=X.pos.filter(o=>o.invQty>0&&o.qty>0).sort((a,b)=>(b.qty-b.disp)-(a.qty-a.disp));
   const r2=dd.map(o=>{const pend=Math.max(0,o.qty-o.disp),p=pc0(o.disp,o.qty);return dRow(lab(o),[{v:o.disp,cls:'s1',tip:o.po+' · Dispatched '+qty(o.disp)+' units'},{v:pend,cls:'s3',tip:o.po+' · Pending dispatch '+qty(pend)+' units'}],Math.max(1,o.qty,o.disp),'<strong>'+qty(pend)+' pending<span class="pctchip'+(p>=100?' ok':'')+'">'+p+'% sent</span></strong><span class="sub2">of '+qty(o.qty)+' units</span>','PO quantity '+qty(o.qty));}).join('');
