@@ -763,6 +763,7 @@ const nf0=new Intl.NumberFormat('en-IN',{maximumFractionDigits:0});
 const inr=v=>'₹'+nf2.format(v||0);
 const qty=v=>nf0.format(v||0);
 const advUnit=p=>{if(!p)return 0;const c=+p.cost||0;if(p.advPct!=null&&p.advPct!=='')return c*(+p.advPct||0)/100;return +p.advPerUnit||0;};
+const advUnitG=(p,g)=>(g&&g.piPct!=null&&p)?(+p.cost||0)*g.piPct/100:advUnit(p);
 const advPctOf=p=>{if(!p)return null;if(p.advPct!=null&&p.advPct!=='')return +p.advPct;const c=+p.cost||0;return c>0?(+p.advPerUnit||0)/c*100:null;};
 const pct=v=>(Math.round(v*10)/10).toFixed(1)+'%';
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -849,12 +850,12 @@ function calc(d){
   const G=(po,pid)=>{const k=gkey(po,pid);let g=groups.get(k);if(!g){g={k:k,po:String(po||'').trim(),pid:pid,poQty:0,poRate:0,received:0,invQty:0,adjusted:0,dispQty:0,logQty:0,hasAdv:false};groups.set(k,g);}return g;};
 
   const adv=[...d.advances].sort(srt);
-  adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;if(!g.by)g.by=whoName(a);if(a.createdBy==='pi'&&a.date&&(!g.piDate||a.date<g.piDate))g.piDate=a.date;});
+  adv.forEach(a=>{const g=G(a.po,a.productId);g.hasAdv=true;g.poQty=Math.max(g.poQty,+a.poQty||0);if(+a.poRate)g.poRate=+a.poRate;g.received+=+a.received||0;if(a.advPct!=null&&a.advPct!==''&&isFinite(+a.advPct))g.piPct=+a.advPct;if(!g.by)g.by=whoName(a);if(a.createdBy==='pi'&&a.date&&(!g.piDate||a.date<g.piDate))g.piDate=a.date;});
 
   const payBy=new Map();d.payments.forEach(x=>payBy.set(x.invoiceId,(payBy.get(x.invoiceId)||0)+(+x.amount||0)));
   const inv=[...d.invoices].sort(srt).map(i=>{
     const p=prod(i.productId),g=G(i.po,i.productId);
-    const q=+i.qty||0,cost=p?+p.cost||0:0,au=advUnit(p);
+    const q=+i.qty||0,cost=p?+p.cost||0:0,au=advUnitG(p,g);
     g.invQty+=q;
     const nonGst=q*cost,extra=+i.extra||0,gst=(nonGst+extra)*GST,total=nonGst+extra+gst;
     const avail=Math.max(0,g.received-g.adjusted);
@@ -874,7 +875,7 @@ function calc(d){
 
   groups.forEach(g=>{
     const p=prod(g.pid);
-    g.p=p;g.c=cli(p);g.advUnit=advUnit(p);
+    g.p=p;g.c=cli(p);g.advUnit=advUnitG(p,g);
     g.required=g.poQty*g.advUnit;g.orderValue=g.poQty*g.poRate;
     g.pending=Math.max(0,g.required-g.received);g.excess=Math.max(0,g.received-g.required);
     g.recvPct=g.required>0?g.received/g.required*100:null;
@@ -1857,8 +1858,8 @@ async function syncPI(manual){
         const akey='a|'+k+'|'+piSlug(pino)+'|'+ix;
         if(seen.has(akey))return;
         const have=[...D[k].advances.values()].some(a=>norm(a.po)===norm(pino)&&a.productId===p.id)||adds.some(a=>a.k===k&&norm(a.row.po)===norm(pino)&&a.row.productId===p.id);
-        if(have){seen.add(akey);return;}
-        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,received:0,refPo:String(pi.ref_po||'').trim(),note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
+        if(have){seen.add(akey);const pv=+it.advancePct;if(isFinite(pv)&&it.advancePct!==''&&it.advancePct!=null)D[k].advances.forEach(a=>{if(a.createdBy==='pi'&&norm(a.po)===norm(pino)&&a.productId===p.id&&(a.advPct==null||a.advPct==='')){a.advPct=pv;upd.push({k:k,a:a});}});return;}
+        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,advPct:(it.advancePct!=null&&it.advancePct!==''&&isFinite(+it.advancePct))?+it.advancePct:undefined,received:0,refPo:String(pi.ref_po||'').trim(),note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
       });
     });
     if(adds.length){
@@ -2212,7 +2213,7 @@ function renderDash(){
     const o=X.open.slice().sort((a,b)=>String(a.due||'9').localeCompare(String(b.due||'9')));
     const sc=Math.max(1,...o.map(i=>i.pend));
     r3=o.map(i=>{const d=od(i),dy=i.due?daysBetween(X.today,i.due):null;return dRow('<strong class="mono">'+esc(i.invNo)+'</strong><span class="sub2">PO '+esc(i.po)+' · due '+fd(i.due)+'</span>',[{v:i.pend,cls:d?'s4':'s2',tip:i.invNo+' · '+(d?'Due (overdue) ':'Not due yet ')+inr(i.pend)}],sc,'<strong>'+inr(i.pend)+'</strong>'+(d?'<span class="sub2 bad">▲ overdue '+(-dy)+' day'+(dy===-1?'':'s')+'</span>':'<span class="sub2">'+(dy==null?'no due date':'due in '+dy+' day'+(dy===1?'':'s'))+'</span>'));}).join('');
-    t3='<div class="tw"><table class="tight"><thead><tr><th>Invoice</th><th>PO</th><th>Invoice date</th><th>Due date</th><th class="r">Pending</th><th>Status</th></tr></thead><tbody>'+o.map(i=>'<tr><td class="mono">'+esc(i.invNo)+'</td><td class="mono">'+esc(i.po)+'</td><td>'+fd(i.date)+'</td><td>'+fd(i.due)+'</td><td class="n">'+inr(i.pend)+'</td><td>'+(od(i)?'<span class="chip bad">Due · overdue</span>':'<span class="chip n0">Not due yet</span>')+'</td></tr>').join('')+'</tbody></table></div>';
+    t3='<div class="tw"><table class="tight"><thead><tr><th>Invoice</th><th>PO</th><th>Invoice date</th><th>Due date</th><th class="r">Invoice value</th><th class="r">GST</th><th class="r">Invoice total</th><th class="r">Advance adjusted</th><th class="r">Paid</th><th class="r">Pending</th><th>Status</th></tr></thead><tbody>'+o.map(i=>'<tr><td class="mono">'+esc(i.invNo)+'</td><td class="mono">'+esc(i.po)+'</td><td>'+fd(i.date)+'</td><td>'+fd(i.due)+'</td><td class="n">'+inr(i.nonGst+i.extra)+'</td><td class="n">'+inr(i.gst)+'</td><td class="n">'+inr(i.total)+'</td><td class="n">'+inr(i.adj)+'</td><td class="n">'+inr(Math.min(i.paid,i.net))+'</td><td class="n"><b>'+inr(i.pend)+'</b></td><td>'+(od(i)?'<span class="chip bad">Due · overdue</span>':'<span class="chip n0">Not due yet</span>')+'</td></tr>').join('')+'</tbody></table></div>';
   }
   const ndAmt=Math.max(0,X.outstanding-X.overdue),op=pc0(X.overdue,X.outstanding);
   const s3=X.outstanding>TOL?'<div class="dsum">'+donut([{v:X.overdue,cls:'s4',tip:'Due (overdue) '+inr(X.overdue)},{v:ndAmt,cls:'s2',tip:'Not due yet '+inr(ndAmt)}],op+'%','overdue',124,op+' percent of outstanding amount is overdue')+'<div class="facts"><div class="fact"><i class="s4"></i><span>Due (overdue)</span><b>'+inr(X.overdue)+'</b></div><div class="fact"><i class="s2"></i><span>Not due yet</span><b>'+inr(ndAmt)+'</b></div></div></div>':'';
