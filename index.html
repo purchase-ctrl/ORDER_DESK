@@ -507,7 +507,7 @@ tbody tr:hover td{background:var(--head)}
 .dt .v{font-size:clamp(18px,1.9vw,23px);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin:1px 0}
 .dt .s{font-size:12.5px;color:var(--muted)}
 /* cards */
-.ptcard .ptxt{margin:2px 0 6px;font-size:1.02rem;line-height:1.5;color:var(--ink)}.ptcard .ptarea{width:100%;min-height:84px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font:inherit;background:var(--surface);color:var(--ink);resize:vertical}.ptcard .fa{margin-top:10px}
+.ptcard .ptxt{margin:2px 0 6px;font-size:1.02rem;line-height:1.5;color:var(--ink)}.ptcard .ptarea{width:100%;min-height:84px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font:inherit;background:var(--surface);color:var(--ink);resize:vertical}.ptcard .fa{margin-top:12px}.ptgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.ptrow{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 8px}.ptrow>div{flex:1 1 150px;background:var(--bg2,#f4f5fb);border:1px solid var(--line);border-radius:14px;padding:12px 14px}.ptrow b{display:block;font-size:1.25rem;font-weight:700}.ptrow span{font-size:.82rem;color:var(--muted)}
 .dcard{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:20px 22px;box-shadow:var(--shadow);min-width:0}
 .dcard>.dh{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;margin-bottom:4px}
 .dcard h3{margin:0;font-size:17px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
@@ -1517,7 +1517,7 @@ document.addEventListener('click',e=>{
   else if(act==='padv'){S.form=null;paStart();}
   else if(act==='ptedit'){if(isAdmin()){S.ptEdit=S.dashClient;renderDash();const t=$('#pt_txt');t&&t.focus();}}
   else if(act==='ptcancel'){S.ptEdit=null;renderDash();}
-  else if(act==='ptsave'){const cl=D[S.co].clients.get(S.dashClient),t=$('#pt_txt');if(isAdmin()&&cl&&t){const v=t.value.replace(/\s+/g,' ').trim();put('clients',Object.assign({},cl,{payTerms:v,payTermsBy:v?'admin':'pi'})).then(ok=>{if(ok){S.ptEdit=null;buildAll();toast(v?'Payment terms saved':'Payment terms cleared');}});}}
+  else if(act==='ptsave'){const cl=D[S.co].clients.get(S.dashClient),A=$('#pt_adv'),Dd=$('#pt_disp'),Dy=$('#pt_days');if(isAdmin()&&cl&&A){const ad=+A.value,di=+Dd.value,dy=+Dy.value;if(ad+di>100){$('#pt_err').textContent='Advance and on dispatch together cannot be more than 100%.';return;}const n=Object.assign({},cl,{ptAdv:ad,ptDisp:di,ptDays:dy,payTermsBy:'admin'});n.payTerms=ptFmt(n);put('clients',n).then(ok=>{if(ok){S.ptEdit=null;buildAll();toast('Payment terms saved');}});}}
   else if(act==='stmtapply'){applyStatement();}
   else if(act==='stmtcancel'){STMT=null;$('#formHost').innerHTML='';}
   else if(act==='add'){S.form={sec:S.tab,id:null};showForm();}
@@ -2721,6 +2721,14 @@ function piTermsOf(pi){
   return v;
 }
 /* Latest PI of each client wins. Terms an admin typed by hand are never overwritten. Returns the clients that changed. */
+function ptParse(v){
+  const t=String(v||''),a=t.match(/(\d{1,3})\s*%\s*(?:as\s+)?advance/i)||t.match(/advance\s*(?:of|:)?\s*(\d{1,3})\s*%/i),
+    d=t.match(/(\d{1,3})\s*%\s*(?:pre-?\s*dispatch|before\s+dispatch|on\s+dispatch|against\s+dispatch|at\s+dispatch|against\s+delivery|on\s+delivery)/i),
+    n=t.match(/(\d{1,3})\s*days?/i);
+  if(!a&&!d)return null;
+  return {ptAdv:a?+a[1]:0,ptDisp:d?+d[1]:Math.max(0,100-(a?+a[1]:0)),ptDays:n?+n[1]:0};
+}
+const ptFmt=c=>{if(c&&c.ptAdv!=null)return (c.ptAdv||0)+'% advance · '+(c.ptDisp||0)+'% on dispatch · '+((c.ptDays||0)>0?'due '+c.ptDays+' days after dispatch':'due on dispatch');return String((c&&c.payTerms)||'').trim();};
 function applyPiTerms(rows){
   const best=new Map();
   (rows||[]).forEach(pi=>{
@@ -2732,7 +2740,7 @@ function applyPiTerms(rows){
     if(!b||st>=b.st)best.set(k,{co:co,cl:cl,v:v,st:st});
   });
   const out=[];
-  best.forEach(b=>{if(b.cl.payTermsBy==='admin'||b.cl.payTerms===b.v)return;const n=Object.assign({},b.cl,{payTerms:b.v,payTermsBy:'pi'});D[b.co].clients.set(n.id,n);out.push({co:b.co,c:n});});
+  best.forEach(b=>{if(b.cl.payTermsBy==='admin'||(b.cl.payTerms===b.v&&(b.cl.ptAdv!=null)===!!ptParse(b.v)))return;const n=Object.assign({},b.cl,{payTerms:b.v,payTermsBy:'pi',ptAdv:undefined,ptDisp:undefined,ptDays:undefined},ptParse(b.v)||{});D[b.co].clients.set(n.id,n);out.push({co:b.co,c:n});});
   return out;
 }
 async function cloudFillTerms(){
@@ -2745,10 +2753,13 @@ async function cloudFillTerms(){
 }
 function ptCardHTML(c){
   if(!c)return '';
-  const ed=isAdmin()&&S.ptEdit===c.id,v=String(c.payTerms||'').trim();
+  const ed=isAdmin()&&S.ptEdit===c.id,v=ptFmt(c);
+  const pc=['0','10','20','25','30','40','50','60','70','75','80','90','100'],ds=[0,7,15,21,30,45,60,90];
+  const sel=(id,lab,opts,cur,fmt)=>'<div class="f"><label for="'+id+'">'+lab+'</label><select id="'+id+'">'+opts.map(o=>'<option value="'+o+'"'+(+o===+cur?' selected':'')+'>'+fmt(o)+'</option>').join('')+'</select></div>';
+  const cur=c.ptAdv!=null?c:Object.assign({ptAdv:0,ptDisp:100,ptDays:0},ptParse(c.payTerms)||{});
   return '<section class="dcard ptcard" aria-label="Payment terms"><div class="dh"><h3>Payment terms</h3>'+(isAdmin()&&!ed?'<div class="bt"><button type="button" class="btn sm" data-act="ptedit">'+(v?'Edit':'Add terms')+'</button></div>':'')+'</div>'+
-    (ed?'<label class="sr" for="pt_txt">Payment terms</label><textarea id="pt_txt" rows="3" class="ptarea" placeholder="e.g. 50% advance at the time of order confirmation. 50% pre-dispatch.">'+esc(v)+'</textarea><div class="fa"><button type="button" class="btn primary" data-act="ptsave">Save terms</button><button type="button" class="btn" data-act="ptcancel">Cancel</button></div>'
-      :(v?'<p class="ptxt">'+esc(v)+'</p><p class="dsub">'+(c.payTermsBy==='admin'?'Set by admin.':'Taken from the Terms &amp; Conditions of the latest PI in PI Desk.')+'</p>':'<p class="dsub">No payment terms yet. They fill in from the PI Desk Terms &amp; Conditions after the client\'s first PI, or an admin can add them here.</p>'))+'</section>';
+    (ed?'<div class="grid ptgrid">'+sel('pt_adv','Advance',pc,cur.ptAdv,o=>o+'%')+sel('pt_disp','On dispatch',pc,cur.ptDisp,o=>o+'%')+sel('pt_days','Due after dispatch',ds,cur.ptDays,o=>(+o?o+' days':'Immediately'))+'</div><div class="fa"><button type="button" class="btn primary" data-act="ptsave">Save terms</button><button type="button" class="btn" data-act="ptcancel">Cancel</button><span id="pt_err" class="ferr" role="alert"></span></div>'
+      :(v?(c.ptAdv!=null?'<div class="ptrow"><div><b>'+(c.ptAdv||0)+'%</b><span>Advance</span></div><div><b>'+(c.ptDisp||0)+'%</b><span>On dispatch</span></div><div><b>'+((c.ptDays||0)>0?c.ptDays+' days':'Immediately')+'</b><span>Due after dispatch</span></div></div>':'<p class="ptxt">'+esc(v)+'</p>')+'<p class="dsub">'+(c.payTermsBy==='admin'?'Set by admin.':'Taken from the Terms &amp; Conditions of the latest PI in PI Desk.')+'</p>':'<p class="dsub">No payment terms yet. They fill in from the PI Desk Terms &amp; Conditions after the client\'s first PI, or an admin can add them here.</p>'))+'</section>';
 }
 /* ---------- no double entries, one account per client ---------- */
 const cnorm=s=>String(s||'').toLowerCase().replace(/\bprivate\b/g,'pvt').replace(/\blimited\b/g,'ltd').replace(/[^a-z0-9]/g,'');
