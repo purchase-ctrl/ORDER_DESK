@@ -2545,10 +2545,11 @@ function parseInvoicePdf(pages){
   const oi=rows.findIndex(r=>/Buyer\s*[’']s Order No/i.test(r.right||r.text));
   if(oi>=0){const parts=[];for(let k=oi;k<Math.min(rows.length,oi+4);k++){const r=rows[k];if(k>oi&&/Dispatch Doc/i.test(r.right))break;let t=r.right.replace(/Buyer\s*[’']s Order No\.?/i,'').replace(/\bDated\b/i,'').replace(/\b\d{1,2}-[A-Za-z]{3}-\d{2,4}\b/,'').trim();if(t)parts.push(t);}out.order=parts.join(' ').trim();}
   const re=/^\s*\d+\s+(.+?)\s+\d{4,8}\s+([\d,]+(?:\.\d+)?)\s*[A-Za-z]+\s+([\d,]+(?:\.\d+)?)\s+[A-Za-z]+\s+([\d,]+\.\d{2})\s*$/;
-  const seen=new Map();
-  rows.forEach(r=>{
+  let last=null;
+  pages.reduce((a,p)=>a.concat(p),[]).forEach(r=>{
     const m=r.text.match(re);
-    if(m){const k=m[1].replace(/\s+/g,' ').trim().toLowerCase();let l=seen.get(k);if(!l){l={desc:m[1].replace(/\s+/g,' ').trim(),qty:0,rate:pnum(m[3])};seen.set(k,l);out.lines.push(l);}l.qty+=pnum(m[2]);return;}
+    if(m){last={desc:m[1].replace(/\s+/g,' ').trim(),shade:'',qty:pnum(m[2]),rate:pnum(m[3])};out.lines.push(last);return;}
+    const sh=r.text.match(/^\s*Shade(?:\s*Name)?\s*[-:]\s*(.+?)\s*$/i);if(sh&&last&&!last.shade){last.shade=sh[1];return;}
     const e=r.text.match(/(dev\w*\s+charges|freight|forwarding|packing|loading|transport)\b.*?([\d,]+\.\d{2})\s*$/i);if(e)out.extra+=pnum(e[2]);
     const t=r.text.match(/^Total\b.*?pcs.*?([\d,]+\.\d{2})\s*$/i);if(t&&!out.total)out.total=pnum(t[1]);
   });
@@ -2556,14 +2557,14 @@ function parseInvoicePdf(pages){
 }
 let IVP=null;
 function ivMatchClient(name){const k=cnorm(name);if(!k)return null;return [...D[S.co].clients.values()].filter(clientShown).find(c=>cnorm(c.name)===k)||[...D[S.co].clients.values()].filter(clientShown).find(c=>{const a=cnorm(c.name);return a.length>4&&(a.includes(k)||k.includes(a));})||null;}
-function ivMatchProduct(clientId,desc){const k=pnorm(desc);const ps=[...D[S.co].products.values()].filter(p=>p.clientId===clientId);return ps.find(p=>pnorm(p.name)===k)||ps.find(p=>{const a=pnorm(p.name);return a&&(a.includes(k)||k.includes(a));})||null;}
+function ivMatchProduct(clientId,desc,shade){const z=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');const k=z(desc),ks=z(desc+' '+(shade||''));const ps=[...D[S.co].products.values()].filter(p=>p.clientId===clientId);return (shade&&ps.find(p=>z(p.name)===ks))||ps.find(p=>z(p.name)===k)||ps.find(p=>{const a=z(p.name);return a&&(a.includes(k)||k.includes(a));})||null;}
 function ivPOs(productId){return [...R.groups.values()].filter(g=>g.pid===productId&&g.po).map(g=>({po:g.po,left:g.poQty>0?g.poQty-g.invQty:null}));}
 function ivLineHTML(l,i,cid){
   const ps=[...D[S.co].products.values()].filter(p=>p.clientId===cid).sort(byName);
-  const p=ivMatchProduct(cid,l.desc),pos=p?ivPOs(p.id):[];
+  const p=ivMatchProduct(cid,l.desc,l.shade),pos=p?ivPOs(p.id):[];
   let po=IVP.order&&pos.find(x=>norm(x.po)===norm(IVP.order))?IVP.order:'';
   if(!po){const open=pos.filter(x=>x.left==null||x.left>0);if(open.length===1)po=open[0].po;}
-  return '<div class="ivl" data-i="'+i+'"><div class="f"><label>On the PDF</label><div class="ivd">'+esc(l.desc)+'<small>'+qty(l.qty)+' pcs at ₹'+nf2.format(l.rate)+'</small></div></div>'+
+  return '<div class="ivl" data-i="'+i+'"><div class="f"><label>On the PDF</label><div class="ivd">'+esc(l.desc)+(l.shade?' · '+esc(l.shade):'')+'<small>'+qty(l.qty)+' pcs at ₹'+nf2.format(l.rate)+'</small></div></div>'+
     '<div class="f"><label for="iv_p'+i+'">Product *</label><select id="iv_p'+i+'" class="iv_p"><option value="">Choose product</option>'+ps.map(x=>'<option value="'+esc(x.id)+'"'+(p&&p.id===x.id?' selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div>'+
     '<div class="f"><label for="iv_q'+i+'">Quantity *</label><input id="iv_q'+i+'" class="iv_q" type="number" min="0" step="any" value="'+l.qty+'"></div>'+
     '<div class="f"><label for="iv_o'+i+'">PI / PO number *</label><input id="iv_o'+i+'" class="iv_o" list="iv_dl'+i+'" autocomplete="off" value="'+esc(po)+'" placeholder="Select or type"><datalist id="iv_dl'+i+'">'+pos.map(x=>'<option value="'+esc(x.po)+'">'+(x.left!=null?esc(qty(x.left))+' pcs left':'')+'</option>').join('')+'</datalist></div></div>';
@@ -2620,6 +2621,8 @@ document.addEventListener('submit',async e=>{
     if(!(q>0)){er.textContent='Enter the quantity for every line.';return;}
     if(!po){er.textContent='Enter the PI / PO number for every line.';return;}
     if([...D[S.co].invoices.values()].some(i=>norm(i.invNo)===norm(no)&&i.productId===pid&&norm(i.po)===norm(po))){er.textContent='This invoice is already entered for this PI / PO and product.';return;}
+    const same=rows.find(x=>x.productId===pid&&norm(x.po)===norm(po));
+    if(same){same.qty+=q;continue;}
     rows.push({id:uid()+rows.length,date:date,invNo:no,productId:pid,po:po,qty:q,extra:rows.length?0:extra,paid:0});
   }
   if(!rows.length){er.textContent='There is no product line to save.';return;}
