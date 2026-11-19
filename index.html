@@ -2646,7 +2646,7 @@ document.addEventListener('submit',async e=>{
 let PA=null;
 function paPOs(){
   const m=new Map();
-  R.inv.filter(i=>i.pend>TOL&&i.po&&i.c&&clientShown(i.c)).forEach(i=>{const k=norm(i.po);let o=m.get(k);if(!o){o={po:i.po,client:i.c.name,pend:0};m.set(k,o);}o.pend+=i.pend;});
+  R.inv.filter(i=>i.pend>TOL&&i.po&&i.c&&clientShown(i.c)).forEach(i=>{const k=norm(i.po);let o=m.get(k);if(!o){o={po:i.po,client:i.c.name,pend:0,invs:[]};m.set(k,o);}o.pend+=i.pend;if(o.invs.indexOf(i.invNo)<0)o.invs.push(i.invNo);});
   return [...m.values()].sort((a,b)=>String(a.po).localeCompare(String(b.po)));
 }
 /* Returns {rows:[{inv,product,amt}], prods:[{name,weight,share,pend,amt}], left}. Split by product order value (with GST), capped at what each product still owes; the excess moves to the others. */
@@ -2672,13 +2672,13 @@ function paSplit(po,amount){
 }
 function paStart(){
   const pos=paPOs();
-  PA={po:pos.length?pos[0].po:'',amt:'',date:todayStr(),mode:'Bank transfer',ref:'',note:''};
+  PA={po:'',amt:'',date:todayStr(),mode:'Bank transfer',ref:'',note:''};
   paRender();const f=$('#paf');f&&f.scrollIntoView&&f.scrollIntoView({block:'nearest'});
 }
 function paRender(){
   const pos=paPOs();
   $('#formHost').innerHTML='<form id="paf" class="form" novalidate><h3>Payment advice</h3><p class="muted">Enter what came against a PI / PO. It is split across that PI\'s products by order value (with GST), and recorded against each product\'s oldest unpaid invoices.</p>'+
-    (pos.length?'<div class="grid"><div class="f"><label for="pa_po">PI / PO *</label><select id="pa_po">'+pos.map(x=>'<option value="'+esc(x.po)+'"'+(norm(x.po)===norm(PA.po)?' selected':'')+'>'+esc(x.po+' · '+x.client+' · pending '+inr(x.pend))+'</option>').join('')+'</select></div>'+
+    (pos.length?'<div class="grid"><div class="f"><label for="pa_po">PI / PO *</label><select id="pa_po"><option value="">Choose the PI / PO this payment is for</option>'+pos.map(x=>'<option value="'+esc(x.po)+'"'+(norm(x.po)===norm(PA.po)?' selected':'')+'>'+esc(x.po+' · '+x.client+' · invoice '+x.invs.slice(0,3).join(', ')+(x.invs.length>3?' +'+(x.invs.length-3):'')+' · pending '+inr(x.pend))+'</option>').join('')+'</select></div>'+
     '<div class="f"><label for="pa_amt">Amount received (₹) *</label><input id="pa_amt" type="number" min="0" step="any" inputmode="decimal" value="'+esc(PA.amt)+'"></div>'+
     '<div class="f"><label for="pa_date">Date received *</label><input id="pa_date" type="date" value="'+esc(PA.date)+'"></div>'+
     '<div class="f"><label for="pa_mode">Mode</label><select id="pa_mode">'+['Bank transfer','UPI','Cheque','Cash','Other'].map(x=>'<option'+(x===PA.mode?' selected':'')+'>'+x+'</option>').join('')+'</select></div>'+
@@ -2691,11 +2691,12 @@ function paRender(){
 function paPreview(){
   const el=$('#pa_prev');if(!el||!PA)return;
   const a=+PA.amt||0,sp=paSplit(PA.po,a);
+  if(!PA.po){el.innerHTML='<p class="muted">Choose the PI / PO first. The payment is applied to that PI\'s invoices.</p>';return;}
   if(!(a>0)){el.innerHTML='<p class="muted">Enter the amount to see how it is split.</p>';return;}
   el.innerHTML='<div class="tw"><table class="tight"><thead><tr><th>Product</th><th class="r">Order value (with GST)</th><th class="r">Still pending</th><th class="r">This payment</th></tr></thead><tbody>'+
     sp.prods.map(o=>'<tr><td>'+esc(o.name)+'</td><td class="n">'+inr(o.w)+'</td><td class="n">'+inr(o.pend)+'</td><td class="n"><b>'+inr(o.amt)+'</b></td></tr>').join('')+
     '</tbody><tfoot><tr><td colspan="3">Total</td><td class="n">'+inr(sp.prods.reduce((x,o)=>x+o.amt,0))+'</td></tr></tfoot></table></div>'+
-    (sp.rows.length?'<p class="muted">Goes to: '+sp.rows.map(x=>esc(x.inv.invNo)+' ('+esc(x.product)+') '+inr(x.amt)).join(' · ')+'</p>':'')+
+    (sp.rows.length?'<p class="muted">Reduces the pending amount of: '+sp.rows.map(x=>esc(x.inv.invNo)+' ('+esc(x.product)+') '+inr(x.amt)).join(' · ')+'</p>':'')+
     (sp.left>0.004?'<div class="ivchk bad" role="status">'+inr(sp.left)+' is more than what is pending on this PI / PO. Only the pending amount will be recorded.</div>':'');
 }
 document.addEventListener('input',e=>{const t=e.target;if(!PA||!t||!t.closest||!t.closest('#paf'))return;
@@ -2704,6 +2705,7 @@ document.addEventListener('change',e=>{const t=e.target;if(PA&&t&&t.id==='pa_po'
 document.addEventListener('submit',async e=>{
   if(!e.target||e.target.id!=='paf')return;e.preventDefault();
   const er=$('#ferr'),a=+PA.amt||0;
+  if(!PA.po){er.textContent='Choose the PI / PO this payment is for.';return;}
   if(!(a>0)){er.textContent='Enter the amount received.';return;}
   if(!PA.date){er.textContent='Enter the date received.';return;}
   const sp=paSplit(PA.po,a);if(!sp.rows.length){er.textContent='Nothing is pending on this PI / PO.';return;}
