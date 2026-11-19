@@ -1220,7 +1220,7 @@ function buildPanel(){
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
     (t==='advances'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='invoices'?'<button class="btn" data-act="ivpdf" title="Attach the invoice PDF. The date, invoice number, client, product and quantity are read from it">Attach invoice</button><input type="file" id="ivFile" accept="application/pdf,.pdf" hidden>':'')+
-    (t==='payments'?'<button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against invoices">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
+    (t==='payments'?'<button class="btn" data-act="padv" title="A payment came against a PI. It is split across the PI\'s products automatically">Payment advice</button><button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against invoices">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn" data-act="removesheet" title="Remove every entry that was imported from the old Excel / Google Sheet">Remove old sheet data</button>':'')+
     (t==='admin'?'':'<button class="btn primary" data-act="add">'+ADD[t]+'</button>')+'</div></div><div id="formHost"></div>'+(t==='payments'?payStmtHTML():'')+(t==='admin'&&isAdmin()?fyCardHTML():'')+'<div class="toolbar" role="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search this page" aria-label="Search this page" value="'+esc(S.q)+'" autocomplete="off"></div><div id="listHost"></div>';
   if(S.form&&S.form.sec===t)showForm();
@@ -1513,6 +1513,7 @@ document.addEventListener('click',e=>{
   else if(act==='openpi'){openPI(a.dataset.po);}
   else if(act==='ivpdf'){const f=$('#ivFile');if(f)f.click();}
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
+  else if(act==='padv'){S.form=null;paStart();}
   else if(act==='stmtapply'){applyStatement();}
   else if(act==='stmtcancel'){STMT=null;$('#formHost').innerHTML='';}
   else if(act==='add'){S.form={sec:S.tab,id:null};showForm();}
@@ -2629,6 +2630,77 @@ document.addEventListener('submit',async e=>{
   er.textContent='Saving…';
   for(const row of rows){if(!(await put('invoices',row))){er.textContent='';return;}}
   IVP=null;S.form=null;toast('Invoice '+no+' saved');buildPanel();
+});
+
+/* ---------- payment advice: one payment against a PI, split across its products by order value ---------- */
+let PA=null;
+function paPOs(){
+  const m=new Map();
+  R.inv.filter(i=>i.pend>TOL&&i.po&&i.c&&clientShown(i.c)).forEach(i=>{const k=norm(i.po);let o=m.get(k);if(!o){o={po:i.po,client:i.c.name,pend:0};m.set(k,o);}o.pend+=i.pend;});
+  return [...m.values()].sort((a,b)=>String(a.po).localeCompare(String(b.po)));
+}
+/* Returns {rows:[{inv,product,amt}], prods:[{name,weight,share,pend,amt}], left}. Split by product order value (with GST), capped at what each product still owes; the excess moves to the others. */
+function paSplit(po,amount){
+  const key=norm(po),invs=R.inv.filter(i=>norm(i.po)===key&&i.pend>TOL).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.invNo).localeCompare(String(b.invNo)));
+  const by=new Map();
+  invs.forEach(i=>{let o=by.get(i.productId);if(!o){o={pid:i.productId,name:i.p?i.p.name:'Product',pend:0,w:0,amt:0,invs:[]};by.set(i.productId,o);}o.pend+=i.pend;o.invs.push(i);});
+  R.groups.forEach(g=>{if(norm(g.po)!==key)return;const o=by.get(g.pid);if(o)o.w+=(g.orderValue||0)*(1+GST);});
+  const ps=[...by.values()];ps.forEach(o=>{if(!(o.w>0))o.w=o.pend;});
+  let left=Math.max(0,+amount||0),open=ps.slice();
+  const w0=ps.reduce((a,o)=>a+o.w,0);ps.forEach(o=>{o.share=w0>0?(+amount||0)*o.w/w0:0;});
+  for(let n=0;n<ps.length+1&&left>0.004&&open.length;n++){
+    const tw=open.reduce((a,o)=>a+o.w,0),cap=[];let used=0;
+    open.forEach(o=>{const want=left*o.w/tw,room=o.pend-o.amt;if(want>=room-0.004){used+=room;o.amt+=room;cap.push(o);}});
+    if(!cap.length){open.forEach(o=>{o.amt+=left*o.w/tw;});left=0;break;}
+    left-=used;open=open.filter(o=>cap.indexOf(o)<0);
+  }
+  ps.forEach(o=>{o.amt=Math.round(o.amt*100)/100;});
+  const rows=[];
+  ps.forEach(o=>{let rem=o.amt;o.invs.forEach((i,j)=>{if(!(rem>0.004))return;const part=Math.round(Math.min(rem,i.pend)*100)/100;if(part>0){rows.push({inv:i,product:o.name,amt:part});rem=Math.round((rem-part)*100)/100;}});});
+  const placed=rows.reduce((a,x)=>a+x.amt,0);
+  return {rows:rows,prods:ps,left:Math.round(((+amount||0)-placed)*100)/100};
+}
+function paStart(){
+  const pos=paPOs();
+  PA={po:pos.length?pos[0].po:'',amt:'',date:todayStr(),mode:'Bank transfer',ref:'',note:''};
+  paRender();const f=$('#paf');f&&f.scrollIntoView&&f.scrollIntoView({block:'nearest'});
+}
+function paRender(){
+  const pos=paPOs();
+  $('#formHost').innerHTML='<form id="paf" class="form" novalidate><h3>Payment advice</h3><p class="muted">Enter what came against a PI / PO. It is split across that PI\'s products by order value (with GST), and recorded against each product\'s oldest unpaid invoices.</p>'+
+    (pos.length?'<div class="grid"><div class="f"><label for="pa_po">PI / PO *</label><select id="pa_po">'+pos.map(x=>'<option value="'+esc(x.po)+'"'+(norm(x.po)===norm(PA.po)?' selected':'')+'>'+esc(x.po+' · '+x.client+' · pending '+inr(x.pend))+'</option>').join('')+'</select></div>'+
+    '<div class="f"><label for="pa_amt">Amount received (₹) *</label><input id="pa_amt" type="number" min="0" step="any" inputmode="decimal" value="'+esc(PA.amt)+'"></div>'+
+    '<div class="f"><label for="pa_date">Date received *</label><input id="pa_date" type="date" value="'+esc(PA.date)+'"></div>'+
+    '<div class="f"><label for="pa_mode">Mode</label><select id="pa_mode">'+['Bank transfer','UPI','Cheque','Cash','Other'].map(x=>'<option'+(x===PA.mode?' selected':'')+'>'+x+'</option>').join('')+'</select></div>'+
+    '<div class="f"><label for="pa_ref">Reference (UTR / cheque no.)</label><input id="pa_ref" autocomplete="off" value="'+esc(PA.ref)+'"></div>'+
+    '<div class="f"><label for="pa_note">Note</label><input id="pa_note" autocomplete="off" value="'+esc(PA.note)+'"></div></div>'+
+    '<div id="pa_prev"></div>':'<p class="muted">No PI / PO has an unpaid invoice right now. Add the invoice first.</p>')+
+    '<div class="fa"><button class="btn primary" type="submit"'+(pos.length?'':' disabled')+'>Save payment</button><button class="btn" type="button" data-act="cancel">Cancel</button><span id="ferr" class="ferr" role="alert"></span></div></form>';
+  paPreview();
+}
+function paPreview(){
+  const el=$('#pa_prev');if(!el||!PA)return;
+  const a=+PA.amt||0,sp=paSplit(PA.po,a);
+  if(!(a>0)){el.innerHTML='<p class="muted">Enter the amount to see how it is split.</p>';return;}
+  el.innerHTML='<div class="tw"><table class="tight"><thead><tr><th>Product</th><th class="r">Order value (with GST)</th><th class="r">Still pending</th><th class="r">This payment</th></tr></thead><tbody>'+
+    sp.prods.map(o=>'<tr><td>'+esc(o.name)+'</td><td class="n">'+inr(o.w)+'</td><td class="n">'+inr(o.pend)+'</td><td class="n"><b>'+inr(o.amt)+'</b></td></tr>').join('')+
+    '</tbody><tfoot><tr><td colspan="3">Total</td><td class="n">'+inr(sp.prods.reduce((x,o)=>x+o.amt,0))+'</td></tr></tfoot></table></div>'+
+    (sp.rows.length?'<p class="muted">Goes to: '+sp.rows.map(x=>esc(x.inv.invNo)+' ('+esc(x.product)+') '+inr(x.amt)).join(' · ')+'</p>':'')+
+    (sp.left>0.004?'<div class="ivchk bad" role="status">'+inr(sp.left)+' is more than what is pending on this PI / PO. Only the pending amount will be recorded.</div>':'');
+}
+document.addEventListener('input',e=>{const t=e.target;if(!PA||!t||!t.closest||!t.closest('#paf'))return;
+  const m={pa_amt:'amt',pa_date:'date',pa_ref:'ref',pa_note:'note',pa_po:'po',pa_mode:'mode'}[t.id];if(m){PA[m]=t.value;if(m==='amt'||m==='po')paPreview();}});
+document.addEventListener('change',e=>{const t=e.target;if(PA&&t&&t.id==='pa_po'){PA.po=t.value;paPreview();}});
+document.addEventListener('submit',async e=>{
+  if(!e.target||e.target.id!=='paf')return;e.preventDefault();
+  const er=$('#ferr'),a=+PA.amt||0;
+  if(!(a>0)){er.textContent='Enter the amount received.';return;}
+  if(!PA.date){er.textContent='Enter the date received.';return;}
+  const sp=paSplit(PA.po,a);if(!sp.rows.length){er.textContent='Nothing is pending on this PI / PO.';return;}
+  er.textContent='Saving…';
+  const gid='padv_'+uid();let n=0;
+  for(const x of sp.rows){if(await put('payments',{invoiceId:x.inv.id,date:PA.date,amount:x.amt,mode:PA.mode,ref:PA.ref,note:('Payment advice · '+PA.po+' · split by order value'+(PA.note?' · '+PA.note:'')),advice:gid}))n++;}
+  PA=null;S.form=null;toast('Payment advice saved: '+n+' payment'+(n===1?'':'s')+' recorded across '+sp.prods.filter(o=>o.amt>0).length+' product'+(sp.prods.filter(o=>o.amt>0).length===1?'':'s'));buildPanel();
 });
 /* ---------- no double entries, one account per client ---------- */
 const cnorm=s=>String(s||'').toLowerCase().replace(/\bprivate\b/g,'pvt').replace(/\blimited\b/g,'ltd').replace(/[^a-z0-9]/g,'');
