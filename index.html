@@ -1568,6 +1568,8 @@ document.addEventListener('click',e=>{
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
   else if(act==='padv'){S.form=null;paStart();}
   else if(act==='notifon'){notifEnable();}
+  else if(act==='cxcheck'){piCancelled().then(l=>{CXLIST=l;buildPanel();});}
+  else if(act==='cxremove'){const pi=CXLIST&&CXLIST[+a.dataset.i];if(pi&&isAdmin()){CXDECLINED.delete(piCo(pi.company)+'|'+norm(pi.pi_number));cancelledCleanup([pi]).then(n=>{toast(n?'Removed '+n+' entr'+(n===1?'y':'ies')+' of '+pi.pi_number:'Nothing removed');buildPanel();});}}
   else if(act==='advsplit'){S.form=null;asStart();}
   else if(act==='ptedit'){if(isAdmin()){S.ptEdit=S.dashClient;renderDash();const t=$('#pt_txt');t&&t.focus();}}
   else if(act==='ptcancel'){S.ptEdit=null;renderDash();}
@@ -1852,15 +1854,32 @@ async function cloudFillRefPo(){
 }
 
 /* ---------- PIs cancelled in PI Desk: take their PO out of the Order Desk ---------- */
-let CXSET=new Set();const CXDECLINED=new Set();let CXDONE=[];
+let CXSET=new Set();const CXDECLINED=new Set();let CXDONE=[],CXERR='',CXLIST=null;
 async function piCancelled(){
   try{
     const q='pis?select=pi_number,company,cancelled_at&cancelled_at=not.is.null&limit=1000';
     let rows;
     if(CLOUD)rows=await sbRest('GET',q);
     else{const res=await fetch(PI_URL+'/rest/v1/'+q,{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});if(!res.ok)return [];rows=await res.json();}
-    rows=Array.isArray(rows)?rows:[];CXSET=new Set(rows.map(x=>norm(x.pi_number)));return rows;
-  }catch(e){return [];}
+    rows=Array.isArray(rows)?rows:[];CXSET=new Set(rows.map(x=>norm(x.pi_number)));CXERR='';return rows;
+  }catch(e){CXERR=(e&&e.message)||'could not read the PI list';return [];}
+}
+
+function cxFind(pi){
+  const co=piCo(pi.company),key=norm(pi.pi_number),d=D[co];if(!d||!key)return {co:co,adv:[],inv:[],pay:[],dis:[]};
+  const adv=[...d.advances.values()].filter(a=>norm(a.po)===key),inv=[...d.invoices.values()].filter(i=>norm(i.po)===key),ids=new Set(inv.map(i=>i.id));
+  return {co:co,adv:adv,inv:inv,pay:[...d.payments.values()].filter(x=>ids.has(x.invoiceId)),dis:[...d.dispatches.values()].filter(x=>norm(x.po)===key)};
+}
+function cxCardHTML(){
+  let body='<p class="muted">Press Check to see which PIs were cancelled in PI Desk and whether anything of them is still in the Order Desk.</p>';
+  if(CXLIST){
+    if(CXERR)body='<p class="ferr" role="alert">Could not read the cancelled PIs: '+esc(CXERR)+'. Run supabase-add-cancel-pi.sql in Supabase (PI Desk repo) and make sure this login can read the PIs.</p>';
+    else if(!CXLIST.length)body='<p class="muted">No cancelled PI is visible to this login. If you cancelled one in PI Desk, check that it shows CANCELLED in the PI log there.</p>';
+    else body='<div class="tw"><table class="tight"><thead><tr><th>PI</th><th class="r">Advance entries</th><th class="r">Advance received</th><th class="r">Invoices</th><th class="r">Payments</th><th class="r">Dispatches</th><th></th></tr></thead><tbody>'+
+      CXLIST.map((pi,i)=>{const f=cxFind(pi),n=f.adv.length+f.inv.length+f.pay.length+f.dis.length;
+        return '<tr><td class="mono">'+esc(pi.pi_number)+'</td><td class="n">'+f.adv.length+'</td><td class="n">'+inr(f.adv.reduce((a,x)=>a+(+x.received||0),0))+'</td><td class="n">'+f.inv.length+'</td><td class="n">'+f.pay.length+'</td><td class="n">'+f.dis.length+'</td><td>'+(n?'<button type="button" class="btn sm" data-act="cxremove" data-i="'+i+'">Remove from Order Desk</button>':'<span class="chip n0">Already removed</span>')+'</td></tr>';}).join('')+'</tbody></table></div>';
+  }
+  return '<div class="form" id="cxbox"><h3>PIs cancelled in PI Desk</h3><p class="muted">A cancelled PI\'s advance, invoices, payments and dispatches are removed from the Order Desk. This list shows what is still here. Removing anything that has money or invoices downloads a backup first.</p>'+body+'<div class="fa"><button class="btn" type="button" data-act="cxcheck">Check cancelled PIs</button></div></div>';
 }
 async function cancelledCleanup(list){
   let removed=0,changed=false;CXDONE=[];
@@ -1872,7 +1891,8 @@ async function cancelledCleanup(list){
     const n=adv.length+inv.length+pay.length+dis.length;if(!n)continue;
     const money=adv.reduce((a,x)=>a+(+x.received||0),0)+pay.reduce((a,x)=>a+(+x.amount||0),0),real=money>0||inv.length>0;
     if(real){
-      if(!ME||!isAdmin()||CXDECLINED.has(co+'|'+key))continue;
+      if(!ME||!isAdmin()){continue;}
+      if(CXDECLINED.has(co+'|'+key))continue;
       if(!confirm('PI '+pi.pi_number+' was cancelled in PI Desk.\n\nRemove all its details from the Order Desk?\n'+adv.length+' advance entr'+(adv.length===1?'y':'ies')+' ('+inr(adv.reduce((a,x)=>a+(+x.received||0),0))+' received), '+inv.length+' invoice'+(inv.length===1?'':'s')+', '+pay.length+' payment'+(pay.length===1?'':'s')+', '+dis.length+' dispatch'+(dis.length===1?'':'es')+'.\n\nA backup file of these entries is downloaded first.')){CXDECLINED.add(co+'|'+key);continue;}
       const out={app:'order-desk',version:1,exported:new Date().toISOString(),by:ME.user,note:'Removed because PI '+pi.pi_number+' was cancelled',data:{}};
       out.data[co]={advances:adv,invoices:inv,payments:pay,dispatches:dis};
