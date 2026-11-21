@@ -1806,6 +1806,42 @@ async function cloudFillRefPo(){
   }catch(e){/* PI Desk has no ref_po column or the PIs are not readable: skip quietly */}
   return n;
 }
+/* Cloud mode: a PI cancelled in PI Desk takes its PO out of the Order Desk (its advance entries and dispatch log).
+   Safety: a PO that already has invoices or advance money recorded is NOT deleted, because that would erase real
+   financial records. Those are listed instead, so they can be reconciled by hand.
+   Reads only the PIs this login can see, so people only affect their own PIs' POs. */
+const CXWARNED=new Set();
+async function cloudRemoveCancelled(){
+  const out={removed:0,kept:[]};
+  try{
+    const pis=await sbRest('GET','pis?select=pi_number&cancelled_at=not.is.null&limit=1000');
+    const cx=new Set((pis||[]).map(p=>norm(p.pi_number)).filter(Boolean));
+    if(!cx.size)return out;
+    for(const c of COS){
+      const d=D[c.key],pos=new Set();
+      ['advances','dispatches','invoices'].forEach(sec=>d[sec].forEach(r=>{if(r.po&&cx.has(norm(r.po)))pos.add(norm(r.po));}));
+      for(const po of pos){
+        const advs=[...d.advances.values()].filter(a=>norm(a.po)===po);
+        const disp=[...d.dispatches.values()].filter(x=>norm(x.po)===po);
+        const hasInv=[...d.invoices.values()].some(i=>norm(i.po)===po);
+        const money=advs.reduce((t,a)=>t+(+a.received||0),0);
+        if(hasInv||money>0){out.kept.push(po);continue;}
+        let ok=true;
+        for(const [sec,rows] of [['advances',advs],['dispatches',disp]]){
+          if(!rows.length)continue;
+          try{
+            const res=await sbRest('DELETE','od_records?company=eq.'+c.key+'&section=eq.'+sec+'&id=in.('+rows.map(r=>encodeURIComponent(r.id)).join(',')+')',null,'return=representation');
+            const gone=new Set((res||[]).map(r=>r.id));
+            rows.forEach(r=>{if(gone.has(r.id))d[sec].delete(r.id);});
+            if(gone.size<rows.length)ok=false;
+          }catch(e){ok=false;}
+        }
+        if(ok)out.removed++;else out.kept.push(po);
+      }
+    }
+  }catch(e){/* PI Desk has no cancel columns yet or PIs are not readable: skip quietly */}
+  return out;
+}
 async function syncPI(manual){
   if(CLOUD){
     /* In cloud mode the database does the sync and stamps each row with the PI creator, so users only see their own PIs. */
@@ -1815,7 +1851,13 @@ async function syncPI(manual){
       await cloudLoad();
       const nrp=await cloudFillRefPo();
       const ntm=await cloudFillTerms();if(ntm)await cloudLoad();
+      const cxr=await cloudRemoveCancelled();
       refresh();
+      const stuck=cxr.kept.filter(p=>!CXWARNED.has(p));stuck.forEach(p=>CXWARNED.add(p));
+      if(cxr.removed||stuck.length){
+        toast((cxr.removed?'PI sync: '+cxr.removed+' cancelled PO'+(cxr.removed===1?'':'s')+' removed. ':'')+(stuck.length?stuck.join(', ')+(stuck.length===1?' is':' are')+' cancelled in PI Desk but '+(stuck.length===1?'has':'have')+' invoices or advance recorded, so '+(stuck.length===1?'it was':'they were')+' not removed.':''));
+        piBusy=false;return;
+      }
       const n=r?(+r.clients||0)+(+r.products||0)+(+r.advances||0):0;
       if(nrp)toast('PI sync: '+nrp+' reference PO(s) filled'+(n?' · '+n+' new entr'+(n===1?'y':'ies'):''));
       else
