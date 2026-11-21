@@ -1806,6 +1806,49 @@ async function cloudFillRefPo(){
   }catch(e){/* PI Desk has no ref_po column or the PIs are not readable: skip quietly */}
   return n;
 }
+
+/* ---------- PIs cancelled in PI Desk: take their PO out of the Order Desk ---------- */
+let CXSET=new Set();const CXDECLINED=new Set();
+async function piCancelled(){
+  try{
+    const q='pis?select=pi_number,company,cancelled_at&cancelled_at=not.is.null&limit=1000';
+    let rows;
+    if(CLOUD)rows=await sbRest('GET',q);
+    else{const res=await fetch(PI_URL+'/rest/v1/'+q,{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});if(!res.ok)return [];rows=await res.json();}
+    rows=Array.isArray(rows)?rows:[];CXSET=new Set(rows.map(x=>norm(x.pi_number)));return rows;
+  }catch(e){return [];}
+}
+async function cancelledCleanup(list){
+  let removed=0,changed=false;
+  for(const pi of (list||[])){
+    const co=piCo(pi.company),key=norm(pi.pi_number);if(!key||!D[co])continue;
+    const d=D[co];
+    const adv=[...d.advances.values()].filter(a=>norm(a.po)===key),inv=[...d.invoices.values()].filter(i=>norm(i.po)===key),ids=new Set(inv.map(i=>i.id)),
+      pay=[...d.payments.values()].filter(x=>ids.has(x.invoiceId)),dis=[...d.dispatches.values()].filter(x=>norm(x.po)===key);
+    const n=adv.length+inv.length+pay.length+dis.length;if(!n)continue;
+    const money=adv.reduce((a,x)=>a+(+x.received||0),0)+pay.reduce((a,x)=>a+(+x.amount||0),0),real=money>0||inv.length>0;
+    if(real){
+      if(!ME||!isAdmin()||CXDECLINED.has(co+'|'+key))continue;
+      if(!confirm('PI '+pi.pi_number+' was cancelled in PI Desk.\n\nRemove all its details from the Order Desk?\n'+adv.length+' advance entr'+(adv.length===1?'y':'ies')+' ('+inr(adv.reduce((a,x)=>a+(+x.received||0),0))+' received), '+inv.length+' invoice'+(inv.length===1?'':'s')+', '+pay.length+' payment'+(pay.length===1?'':'s')+', '+dis.length+' dispatch'+(dis.length===1?'':'es')+'.\n\nA backup file of these entries is downloaded first.')){CXDECLINED.add(co+'|'+key);continue;}
+      const out={app:'order-desk',version:1,exported:new Date().toISOString(),by:ME.user,note:'Removed because PI '+pi.pi_number+' was cancelled',data:{}};
+      out.data[co]={advances:adv,invoices:inv,payments:pay,dispatches:dis};
+      saveBlob('removed-'+String(pi.pi_number).replace(/[^A-Za-z0-9-]+/g,'_')+'-'+todayStr()+'.json',JSON.stringify(out,null,1),'application/json');
+      await new Promise(res=>setTimeout(res,500));
+    }
+    for(const [sec,rows] of [['payments',pay],['invoices',inv],['dispatches',dis],['advances',adv]]){
+      const idl=rows.map(x=>x.id);if(!idl.length)continue;
+      if(CLOUD&&!store){
+        for(let i=0;i<idl.length;i+=40){
+          try{const res=await sbRest('DELETE','od_records?company=eq.'+co+'&section=eq.'+sec+'&id=in.('+idl.slice(i,i+40).map(encodeURIComponent).join(',')+')',null,'return=representation');removed+=(res||[]).length;}catch(e){}
+        }
+      }else if(store){for(const id of idl){try{await store.collection(co+'_'+sec).doc(id).delete();removed++;}catch(e){}}}
+      else{idl.forEach(id=>d[sec].delete(id));saveLocal(co,sec);removed+=idl.length;}
+    }
+    changed=true;
+  }
+  if(changed){if(CLOUD)await cloudLoad();buildAll();}
+  return removed;
+}
 async function syncPI(manual){
   if(CLOUD){
     /* In cloud mode the database does the sync and stamps each row with the PI creator, so users only see their own PIs. */
@@ -1815,6 +1858,7 @@ async function syncPI(manual){
       await cloudLoad();
       const nrp=await cloudFillRefPo();
       const ntm=await cloudFillTerms();if(ntm)await cloudLoad();
+      const nrm=await cancelledCleanup(await piCancelled());if(nrm)toast('PI sync: '+nrm+' entr'+(nrm===1?'y':'ies')+' removed for cancelled PIs');
       refresh();
       const n=r?(+r.clients||0)+(+r.products||0)+(+r.advances||0):0;
       if(nrp)toast('PI sync: '+nrp+' reference PO(s) filled'+(n?' · '+n+' new entr'+(n===1?'y':'ies'):''));
@@ -1839,9 +1883,10 @@ async function syncPI(manual){
     if(!res.ok)throw new Error('HTTP '+res.status);
     const rows=await res.json();
     const seen=CLOUD?PISEEN:piSeen();const seen0=new Set(seen);const cq=[];let nc=0,np=0,nb=0,na=0,touched=new Set();const adds=[],upd=[];
+    const cxl=await piCancelled();
     rows.forEach(pi=>{
       const k=piCo(pi.company),name=String(pi.buyer_name||'').trim();
-      if(!name)return;
+      if(!name||CXSET.has(norm(pi.pi_number)))return;
       const stamp={createdBy:'pi',createdByName:String(pi.created_by||'').trim()||'PI Generator',createdAt:String(pi.pi_date||todayStr()).slice(0,10)};
       let cl=[...D[k].clients.values()].find(c=>norm(c.name)===norm(name)||(pi.buyer_gst&&c.gstin&&norm(c.gstin)===norm(pi.buyer_gst)));
       const ckey='c|'+k+'|'+piSlug(name);
@@ -1899,6 +1944,7 @@ async function syncPI(manual){
       touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});
       piSave(seen);
     }
+    const nrm=await cancelledCleanup(cxl);if(nrm)toast('PI sync: '+nrm+' entr'+(nrm===1?'y':'ies')+' removed for cancelled PIs');
     const tch=applyPiTerms(rows);if(tch.length){tch.forEach(x=>touched.add(x.co+'|clients'));if(!CLOUD)touched.forEach(t=>{const a=t.split('|');saveLocal(a[0],a[1]);});}
     if(touched.size)buildAll();
     if(tch.length&&!(nc||np||nb||na||upd.length))toast('PI sync: payment terms updated for '+tch.length+' client'+(tch.length===1?'':'s'));
@@ -2744,7 +2790,7 @@ const ptFmt=c=>{if(c&&c.ptAdv!=null)return (c.ptAdv||0)+'% advance · '+(c.ptDis
 function applyPiTerms(rows){
   const best=new Map();
   (rows||[]).forEach(pi=>{
-    const v=piTermsOf(pi),name=String(pi.buyer_name||'').trim();if(!v||!name)return;
+    const v=piTermsOf(pi),name=String(pi.buyer_name||'').trim();if(!v||!name||pi.cancelled_at||CXSET.has(norm(pi.pi_number)))return;
     const co=piCo(pi.company);
     const cl=[...D[co].clients.values()].find(c=>norm(c.name)===norm(name)||(pi.buyer_gst&&c.gstin&&norm(c.gstin)===norm(pi.buyer_gst)));
     if(!cl)return;
