@@ -1568,7 +1568,7 @@ document.addEventListener('click',e=>{
   else if(act==='stmt'){const f=$('#stmtFile');if(f)f.click();}
   else if(act==='padv'){S.form=null;paStart();}
   else if(act==='notifon'){notifEnable();}
-  else if(act==='cxcheck'){piCancelled().then(l=>{CXLIST=l;buildPanel();});}
+  else if(act==='cxcheck'){piCancelled().then(async l=>{CXLIST=l;if(l.length){const np=await cxSweep();if(np){if(CLOUD)await cloudLoad();buildAll();toast('Removed '+np+' unused product'+(np===1?'':'s')+' left by cancelled PIs');return;}}buildPanel();});}
   else if(act==='cxremove'){const pi=CXLIST&&CXLIST[+a.dataset.i];if(pi&&isAdmin()){CXDECLINED.delete(piCo(pi.company)+'|'+norm(pi.pi_number));cancelledCleanup([pi]).then(n=>{toast(n?'Removed '+n+' entr'+(n===1?'y':'ies')+' of '+pi.pi_number:'Nothing removed');buildPanel();});}}
   else if(act==='advsplit'){S.form=null;asStart();}
   else if(act==='ptedit'){if(isAdmin()){S.ptEdit=S.dashClient;renderDash();const t=$('#pt_txt');t&&t.focus();}}
@@ -1885,6 +1885,24 @@ function cxCardHTML(){
   }
   return '<div class="form" id="cxbox"><h3>PIs cancelled in PI Desk</h3><p class="muted">A cancelled PI\'s advance, invoices, payments and dispatches are removed from the Order Desk. This list shows what is still here. Removing anything that has money or invoices downloads a backup first.</p>'+body+'<div class="fa"><button class="btn" type="button" data-act="cxcheck">Check cancelled PIs</button></div></div>';
 }
+
+/* Products that PI Desk created and that no PO, invoice or dispatch uses any more (left behind when their PI was cancelled). */
+async function cxSweep(){
+  let removed=0;
+  for(const c of COS){
+    const d=D[c.key],used=new Set();
+    ['advances','invoices','dispatches'].forEach(sec=>d[sec].forEach(x=>used.add(x.productId)));
+    const idl=[...d.products.values()].filter(x=>x.createdBy==='pi'&&!used.has(x.id)).map(x=>x.id);
+    if(!idl.length)continue;
+    if(CLOUD&&!store){
+      for(let i=0;i<idl.length;i+=40){
+        try{const res=await sbRest('DELETE','od_records?company=eq.'+c.key+'&section=eq.products&id=in.('+idl.slice(i,i+40).map(encodeURIComponent).join(',')+')',null,'return=representation');(res||[]).forEach(x=>d.products.delete(x.id));removed+=(res||[]).length;}catch(e){}
+      }
+    }else if(store){for(const id of idl){try{await store.collection(c.key+'_products').doc(id).delete();d.products.delete(id);removed++;}catch(e){}}}
+    else{idl.forEach(id=>d.products.delete(id));saveLocal(c.key,'products');removed+=idl.length;}
+  }
+  return removed;
+}
 async function cancelledCleanup(list){
   let removed=0,changed=false;CXDONE=[];
   for(const pi of (list||[])){
@@ -1907,13 +1925,14 @@ async function cancelledCleanup(list){
       const idl=rows.map(x=>x.id);if(!idl.length)continue;
       if(CLOUD&&!store){
         for(let i=0;i<idl.length;i+=40){
-          try{const res=await sbRest('DELETE','od_records?company=eq.'+co+'&section=eq.'+sec+'&id=in.('+idl.slice(i,i+40).map(encodeURIComponent).join(',')+')',null,'return=representation');removed+=(res||[]).length;}catch(e){}
+          try{const res=await sbRest('DELETE','od_records?company=eq.'+co+'&section=eq.'+sec+'&id=in.('+idl.slice(i,i+40).map(encodeURIComponent).join(',')+')',null,'return=representation');(res||[]).forEach(x=>d[sec].delete(x.id));removed+=(res||[]).length;}catch(e){}
         }
       }else if(store){for(const id of idl){try{await store.collection(co+'_'+sec).doc(id).delete();removed++;}catch(e){}}}
       else{idl.forEach(id=>d[sec].delete(id));saveLocal(co,sec);removed+=idl.length;}
     }
     changed=true;CXDONE.push(pi.pi_number);
   }
+  if((list||[]).length){const np=await cxSweep();if(np){changed=true;CXDONE.push(np+' unused product'+(np===1?'':'s'));removed+=np;}}
   if(changed){if(CLOUD)await cloudLoad();buildAll();}
   return removed;
 }
