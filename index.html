@@ -1838,7 +1838,7 @@ const piSlug=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]+/g,'').slice(0,40
 async function cloudFillRefPo(){
   let n=0;
   try{
-    const pis=await sbRest('GET','pis?select=pi_number,ref_po&ref_po=not.is.null&limit=1000');
+    const pis=(await piDetails()).filter(p=>p&&p.ref_po);
     const m=new Map();(pis||[]).forEach(p=>{const rp=String(p.ref_po||'').trim(),k=norm(p.pi_number);if(rp&&k)m.set(k,rp);});
     if(!m.size)return 0;
     for(const c of COS){
@@ -1859,7 +1859,11 @@ async function piCancelled(){
   try{
     const q='pis?select=pi_number,company,cancelled_at&cancelled_at=not.is.null&limit=1000';
     let rows;
-    if(CLOUD)rows=await sbRest('GET',q);
+    if(CLOUD){
+      /* The pis table only shows a login its own PIs. get_pi_log (PI Desk) lists every PI with its cancelled date. */
+      try{const lg=await sbRest('POST','rpc/get_pi_log',{});rows=(Array.isArray(lg)?lg:[]).filter(x=>x&&x.cancelled_at);}
+      catch(e0){rows=await sbRest('GET',q);}
+    }
     else{const res=await fetch(PI_URL+'/rest/v1/'+q,{headers:{apikey:PI_KEY,Authorization:'Bearer '+PI_KEY}});if(!res.ok)return [];rows=await res.json();}
     rows=Array.isArray(rows)?rows:[];CXSET=new Set(rows.map(x=>norm(x.pi_number)));CXERR='';return rows;
   }catch(e){CXERR=(e&&e.message)||'could not read the PI list';return [];}
@@ -2867,10 +2871,15 @@ function applyPiTerms(rows){
   best.forEach(b=>{if(b.cl.payTermsBy==='admin'||(b.cl.payTerms===b.v&&(b.cl.ptAdv!=null)===!!ptParse(b.v)))return;const n=Object.assign({},b.cl,{payTerms:b.v,payTermsBy:'pi',ptAdv:undefined,ptDisp:undefined,ptDays:undefined},ptParse(b.v)||{});D[b.co].clients.set(n.id,n);out.push({co:b.co,c:n});});
   return out;
 }
+
+/* Every PI with its notes / payment terms / reference PO. Needs od_pi_details (supabase-od-pi-details.sql); falls back to the PIs this login owns. */
+async function piDetails(){
+  try{const r=await sbRest('POST','rpc/od_pi_details',{});if(Array.isArray(r))return r;}catch(e){}
+  try{return await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes,payment_terms,ref_po,cancelled_at&limit=1000')||[];}
+  catch(e){try{return await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes&limit=1000')||[];}catch(e2){return [];}}
+}
 async function cloudFillTerms(){
-  let rows=null;
-  try{rows=await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes,payment_terms&limit=1000');}
-  catch(e){try{rows=await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes&limit=1000');}catch(e2){return 0;}}
+  const rows=await piDetails();
   const ch=applyPiTerms(rows);let n=0;
   for(const x of ch){try{await sbRest('PATCH','od_records?company=eq.'+x.co+'&section=eq.clients&id=eq.'+encodeURIComponent(x.c.id),{data:x.c},'return=minimal');n++;}catch(e){}}
   return n;
