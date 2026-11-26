@@ -766,6 +766,8 @@ const inr=v=>'₹'+nf2.format(v||0);
 const qty=v=>nf0.format(v||0);
 const advUnit=p=>{if(!p)return 0;const c=+p.cost||0;if(p.advPct!=null&&p.advPct!=='')return c*(+p.advPct||0)/100;return +p.advPerUnit||0;};
 const advUnitG=(p,g)=>(g&&g.piPct!=null&&p)?(+p.cost||0)*g.piPct/100:advUnit(p);
+/* Payment days of a product: the client's "Due after dispatch" when the client has structured payment terms, unless this product's own days were set by hand. */
+const termsDays=(p,C)=>{const c=p&&C?C.get(p.clientId):null;return (c&&c.ptAdv!=null&&!p.termsOwn)?(+c.ptDays||0):(+(p&&p.terms)||0);};
 const ADV_MIN=0.15;
 const pctG=(p,g)=>(g&&g.piPct!=null)?g.piPct:advPctOf(p);
 const advPctOf=p=>{if(!p)return null;if(p.advPct!=null&&p.advPct!=='')return +p.advPct;const c=+p.cost||0;return c>0?(+p.advPerUnit||0)/c*100:null;};
@@ -873,7 +875,7 @@ function calc(d){
     adj=Math.round(adj*100)/100;
     g.adjusted+=adj;pl.adj+=adj;
     const net=total-adj,paid=(+i.paid||0)+(payBy.get(i.id)||0),pend=Math.max(0,net-paid);
-    const due=i.date?addDays(i.date,p?+p.terms||0:0):'';
+    const due=i.date?addDays(i.date,p?termsDays(p,C):0):'';
     return Object.assign({},i,{p:p,c:cli(p),g:g,q:q,nonGst:nonGst,extra:extra,gst:gst,total:total,adj:adj,net:net,paid:paid,legacyPaid:+i.paid||0,pend:pend,due:due,
       remain:g.poQty>0?g.poQty-g.invQty:null,advLeft:Math.max(0,pl.recv-pl.adj),
       status:pend<=TOL?'Paid':(paid>0?'Partial':'Unpaid')});
@@ -950,7 +952,7 @@ function blocks(){
       cols:[{h:'Client',t:r=>cn(r.clientId)},{h:'Product',t:r=>r.name,r:r=>'<strong>'+esc(r.name)+'</strong>'},
         {h:'Final cost / unit',t:r=>+r.cost||0,cls:'n',fmt:inr},{h:'Advance %',t:r=>advPctOf(r),cls:'n',fmt:pct},
         {h:'Advance / unit',t:r=>advUnit(r),cls:'n',fmt:inr},
-        {h:'Payment terms (days)',t:r=>+r.terms||0,cls:'n',fmt:qty}],
+        {h:'Payment terms (days)',t:r=>termsDays(r,D[S.co].clients),cls:'n',fmt:qty}],
       empty:['No products yet','Add each product with its final cost, advance % and payment terms.']}];
   }
   if(t==='advances'){
@@ -1308,7 +1310,7 @@ const FORMS={
       '<div class="f" id="p_name_wrap" hidden><label for="p_name">New product name *</label><input id="p_name" type="text" autocomplete="off" value="'+esc(r.name)+'"></div>'+
       fld('p_cost','Final cost per unit (₹) *','number',r.cost==null?'':r.cost,NUM)+
       fld('p_adv','Advance (% of final cost) *','number',advPctOf(r)==null?'':Math.round(advPctOf(r)*100)/100,NUM,1)+
-      fld('p_terms','Payment terms (days)','number',r.terms==null?30:r.terms,'inputmode="numeric" step="1" min="0"'));},
+      fld('p_terms','Payment terms (days)','number',r.terms==null&&!r.id?30:termsDays(r,D[S.co].clients),'inputmode="numeric" step="1" min="0"'));},
   advances:r=>{r=r||{};return wrapForm(r.id?'Edit advance entry':'New advance received',
     chainHTML(r)+fld('a_refpo','Reference PO number','text',r.refPo||'','autocomplete="off" placeholder="Buyer\'s PO no."')+fld('a_date','Date received *','date',r.date||todayStr())+fld('a_qty','PO quantity *','number',r.poQty==null?'':r.poQty,NUM)+
     fld('a_rate','PO rate (₹ per unit) *','number',r.poRate==null?'':r.poRate,NUM)+fld('a_recv','Advance received (₹) *','number',r.received==null?'':r.received,NUM)+
@@ -1471,7 +1473,8 @@ function readForm(sec){
     if(adv>100)return {err:'Advance cannot be more than 100% of the final cost.'};
     const dup=[...D[S.co].products.values()].some(p=>p.id!==id&&p.clientId===clientId&&norm(p.name)===norm(name));
     if(dup)return {err:'This client already has a product with that name.'};
-    return {row:{id:id,clientId:clientId,name:name,cost:cost,advPct:adv,terms:Math.max(0,parseInt(val('p_terms'),10)||0)}};
+    const tdays=Math.max(0,parseInt(val('p_terms'),10)||0),pc=D[S.co].clients.get(clientId),prevP=D[S.co].products.get(id);
+    return {row:{id:id,clientId:clientId,name:name,cost:cost,advPct:adv,terms:tdays,termsOwn:(pc&&pc.ptAdv!=null)?(tdays!==(+pc.ptDays||0)):!!(prevP&&prevP.termsOwn)}};
   }
   if(sec==='payments'){
     if(!val('pm_inv'))return {err:'Select the invoice.'};
@@ -2343,7 +2346,7 @@ function renderDash(){
   const pRows=X.prods.map(p=>{const gs=R.groups.filter(g=>g.pid===p.id);return {p:p,c:D[S.co].clients.get(p.clientId),pos:new Set(gs.map(g=>norm(g.po))).size,qty:gs.reduce((a,g)=>a+(g.poQty||0),0),val:gs.reduce((a,g)=>a+(g.orderValue||0),0)*(1+GST)};});
   h+='<section class="dcard"><div class="dh"><h3>Product list<span class="cnt">'+pRows.length+'</span></h3></div><p class="dsub">Final cost, advance and payment terms for each product, with how much has been ordered.</p>'+(pRows.length?'<div class="dcards pscroll" tabindex="0" aria-label="Product list">'+
     pRows.map(r=>{const ap=advPctOf(r.p);return '<article class="pcard">'+(cid?'':'<div class="pc">'+esc(r.c?r.c.name:'—')+'</div>')+'<div class="pn">'+esc(r.p.name)+'</div><div class="pcost">'+inr(+r.p.cost||0)+'<small>final cost</small></div>'+
-      '<div class="pchips"><span>Advance '+(ap==null?'—':pct(ap))+'</span><span>Terms '+qty(+r.p.terms||0)+' days</span></div>'+
+      '<div class="pchips"><span>Advance '+(ap==null?'—':pct(ap))+'</span><span>Terms '+qty(termsDays(r.p,D[S.co].clients))+' days</span></div>'+
       '<div class="pfoot"><span><b>'+r.pos+'</b>PI / PO</span><span><b>'+qty(r.qty)+'</b>units</span><span><b>'+inr(r.val)+'</b>order value (with GST)</span></div></article>';}).join('')+'</div>':'<div class="empty"><h3>No products</h3><p class="muted">Add products in the Products tab.</p></div>')+'</section>';
   /* chart 1: payments against PI / PO */
   const pp=X.pos.filter(o=>o.value>0||o.adv+o.invPaid>0).sort((a,b)=>(b.adv+b.invPaid)-(a.adv+a.invPaid)||String(a.po).localeCompare(String(b.po)));
@@ -3138,7 +3141,7 @@ async function myBackup(fmt){
       COS.forEach(c=>{
         const d=D[c.key],r=calc(dataFor(c.key)),co=c.name;
         d.clients.forEach(x=>sh.Clients.push({Company:co,Name:x.name,Brand:x.brand||'',GSTIN:x.gstin||'',Contact:x.contact||'',Phone:x.phone||'',Email:x.email||'',City:x.city||'',Address:x.address||'',Notes:x.notes||''}));
-        d.products.forEach(p=>{const cl=d.clients.get(p.clientId);sh.Products.push({Company:co,Client:cl?cl.name:'',Product:p.name,'Final cost':+p.cost||0,'Advance %':+p.advPct||0,'Terms (days)':+p.terms||0});});
+        d.products.forEach(p=>{const cl=d.clients.get(p.clientId);sh.Products.push({Company:co,Client:cl?cl.name:'',Product:p.name,'Final cost':+p.cost||0,'Advance %':+p.advPct||0,'Terms (days)':termsDays(p,d.clients)});});
         r.advRows.forEach(a=>sh.Advances.push({Company:co,Date:a.date||'',Client:a.c?a.c.name:'',Product:a.p?a.p.name:'','PI / PO':a.po,'PO qty':+a.poQty||0,'PO rate':+a.poRate||0,'Advance required':Math.round(a.req*100)/100,'Advance received':+a.received||0,'Pending after this':Math.round(a.pendAfter*100)/100,'Note':a.note||''}));
         r.inv.forEach(i=>sh.Invoices.push({Company:co,Date:i.date||'','Invoice no':i.invNo,Client:i.c?i.c.name:'',Product:i.p?i.p.name:'','PI / PO':i.po,Qty:i.q,'Amount (no GST)':Math.round(i.nonGst*100)/100,'Extra charges':i.extra,GST:Math.round(i.gst*100)/100,'Invoice total':Math.round(i.total*100)/100,'Advance adjusted':Math.round(i.adj*100)/100,'Net receivable':Math.round(i.net*100)/100,Received:Math.round(i.paid*100)/100,Pending:Math.round(i.pend*100)/100,'Due date':i.due||'',Status:i.status}));
         r.pay.forEach(x=>sh.Payments.push({Company:co,Date:x.date||'','Invoice no':x.i?x.i.invNo:'',Client:x.c?x.c.name:'','Amount received':x.amt,Mode:x.mode||'','UTR / reference':x.ref||'',Note:x.note||''}));
