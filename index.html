@@ -207,6 +207,9 @@ table.tight th,table.tight td{padding-left:10px;padding-right:10px}
 .who .sub{font-family:inherit;margin-top:1px}
 .av{flex:none;display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.02em}
 .dim{color:var(--muted);font-size:12.5px}
+.tbadge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--surface-2,#eef2f7);color:var(--text,#223)}
+.tbadge.pack{background:#fff1d6;color:#7a4a00}
+.lsw{width:130px;text-align:right}
 .sub{display:block;font-size:12px;color:var(--muted);font-family:var(--mono)}
 .bar{display:inline-block;width:88px;height:8px;border-radius:4px;background:var(--neutral-bg);overflow:hidden;vertical-align:middle;margin-right:8px}
 .bar>i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3))}
@@ -769,6 +772,8 @@ const advUnitG=(p,g)=>(g&&g.piPct!=null&&p)?(+p.cost||0)*g.piPct/100:advUnit(p);
 /* Payment days of a product: the client's "Due after dispatch" when the client has structured payment terms, unless this product's own days were set by hand. */
 const termsDays=(p,C)=>{const c=p&&C?C.get(p.clientId):null;return (c&&c.ptAdv!=null&&!p.termsOwn)?(+c.ptDays||0):(+(p&&p.terms)||0);};
 const ADV_MIN=0.15;
+/* A PI whose type is Primary / Secondary Packaging is a container PI: its advance is a deposit kept apart from the product (FG) advance. */
+const isPackType=t=>/packaging/i.test(String(t||''));
 const pctG=(p,g)=>(g&&g.piPct!=null)?g.piPct:advPctOf(p);
 const advPctOf=p=>{if(!p)return null;if(p.advPct!=null&&p.advPct!=='')return +p.advPct;const c=+p.cost||0;return c>0?(+p.advPerUnit||0)/c*100:null;};
 const pct=v=>(Math.round(v*10)/10).toFixed(1)+'%';
@@ -920,8 +925,11 @@ function calc(d){
     poCount:gl.filter(g=>g.hasAdv).length
   };
   const refMap=new Map();adv.forEach(a=>{const rp=String(a.refPo||'').trim(),k=String(a.po||'').trim().toLowerCase();if(rp&&k&&!refMap.has(k))refMap.set(k,rp);});
-  groups.forEach(g=>{g.refPo=refMap.get(String(g.po||'').trim().toLowerCase())||'';});
-  return {groups:gl,advRows:advRows,inv:inv,pay:pay,dis:dis,t:t,refMap:refMap};
+  const typeMap=new Map();adv.forEach(a=>{const ty=String(a.piType||'').trim(),k=String(a.po||'').trim().toLowerCase();if(ty&&k)typeMap.set(k,ty);});
+  groups.forEach(g=>{g.refPo=refMap.get(String(g.po||'').trim().toLowerCase())||'';g.piType=typeMap.get(String(g.po||'').trim().toLowerCase())||'';g.isPack=isPackType(g.piType);
+    /* A container PI is paid in full with GST up front. */
+    if(g.isPack&&g.orderValue>0){g.required=g.orderValue*(1+GST);g.pending=Math.max(0,g.required-g.received);g.excess=Math.max(0,g.received-g.required);g.recvPct=g.required>0?g.received/g.required*100:null;}});
+  return {groups:gl,advRows:advRows,inv:inv,pay:pay,dis:dis,t:t,refMap:refMap,typeMap:typeMap};
 }
 function recompute(){R=calc(dataFor(S.co));}
 
@@ -959,14 +967,14 @@ function blocks(){
     const chipAdv=g=>g.required<=0?chip('n0','No advance set'):(g.pending<=TOL?(g.excess>TOL?chip('warn','Excess '+inr(g.excess)):chip('ok','Complete')):(g.piDate&&workDaysSince(g.piDate)>ADV_DAYS?chip('bad','Overdue · day '+workDaysSince(g.piDate)):chip('warn','Pending')));
     return [
       {id:'adv-summary',name:'advance position by PO',title:'Advance position by PO',rows:R.groups.filter(g=>g.hasAdv).sort((a,b)=>cl(a).localeCompare(cl(b))||pr(a).localeCompare(pr(b))||a.po.localeCompare(b.po)),
-        cols:[{h:'PI date',t:r=>r.piDate||'',fmt:fd,s:1},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
+        cols:[{h:'PI date',t:r=>r.piDate||'',fmt:fd,s:1},{h:'Client',t:cl},{h:'Product',t:pr},{h:'PO number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PI type',t:r=>typeOf(r.po),r:r=>typeBadge(r.po)},{h:'PO qty',t:r=>r.poQty,cls:'n',fmt:qty},{h:'PO rate',t:r=>r.poRate,cls:'n',fmt:inr},
           {h:'Order value',t:r=>r.orderValue,cls:'n',fmt:inr},{h:'Created by',t:r=>r.by||'',r:r=>r.by?'<span class="chip br">'+esc(r.by)+'</span>':'<span class="dim">—</span>'},{h:'Advance required',t:r=>r.required,cls:'n',fmt:inr,s:1},{h:'Received',t:r=>r.received,cls:'n',fmt:inr,s:1},
           {h:'Pending',t:r=>r.pending,cls:'n',fmt:inr,s:1},{h:'Received %',t:r=>r.recvPct,cls:'n',fmt:pct},
           {h:'Adjusted in invoices',t:r=>r.adjusted,cls:'n',fmt:inr,s:1},{h:'Not yet adjusted',t:r=>r.unadj,cls:'n',fmt:inr,s:1},
           {h:'Status',t:r=>r.required<=0?'No advance set':(r.pending<=TOL?(r.excess>TOL?'Excess':'Complete'):(r.piDate&&workDaysSince(r.piDate)>ADV_DAYS?'Overdue':'Pending')),r:chipAdv}],
         empty:['No advance recorded','Once you log advance received, each PO shows what is required, received and still pending here.']},
       {id:'adv-stmt',name:'advance received against PI',title:'Advance received against PI',edit:'advances',search:1,rows:R.advRows.filter(r=>(+r.received||0)>0.004).sort((a,b)=>String(b.date).localeCompare(String(a.date))),
-        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PI date',t:r=>(r.g&&r.g.piDate)||'',fmt:fd},
+        cols:[{h:'Date',t:r=>r.date,fmt:fd},{h:'Client name',t:cl},{h:'PI number',t:r=>r.po,r:r=>polink((r=>r.po)(r)),cls:'mono'},{h:'Ref. PO',t:r=>refOf(r.po),cls:'mono'},{h:'PI type',t:r=>typeOf(r.po),r:r=>typeBadge(r.po)},{h:'PI date',t:r=>(r.g&&r.g.piDate)||'',fmt:fd},
           {h:'Advance requested',t:r=>r.req,cls:'n',fmt:inr,s:1},{h:'Advance received',t:r=>+r.received||0,cls:'n',fmt:inr,s:1},
           {h:'UTR details',t:r=>r.utr||(String(r.note||'').match(/\(ref ([^)]+)\)/)||[])[1]||'',cls:'mono wrapc'},
           {h:'Pending advance',t:r=>r.pendPct==null?'':r.pendPct,
@@ -1273,7 +1281,7 @@ function buildPanel(){
   if(t==='dashboard'){$('#panel').innerHTML='<div id="dashHost"></div>';renderDash();return;}
   if(t==='ledger'){$('#panel').innerHTML='<div class="ph"><div><h2>Ledger</h2><p class="muted">One party at a time, invoice by invoice. Check it, save it as a PDF and send it to ask for payment.</p></div></div><div id="ledHost"></div>';renderLedger();return;}
   $('#panel').innerHTML='<div class="ph"><div><h2>'+TLAB[t]+'</h2><p class="muted">'+INTRO[t]+'</p></div><div class="pt">'+
-    (t==='advances'?'<button class="btn" data-act="advsplit" title="One advance came for a whole PI (for example every shade of a product). It is divided across the PI\'s products">Advance for whole PI</button><button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
+    (t==='advances'?'<button class="btn" data-act="lsplit" title="One payment came for a PO that has a container (packaging) PI and a product (FG) PI. It is divided between the PIs">Lump-sum: container + FG</button><button class="btn" data-act="advsplit" title="One advance came for a whole PI (for example every shade of a product). It is divided across the PI\'s products">Advance for whole PI</button><button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against PIs">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='invoices'?'<button class="btn" data-act="ivpdf" title="Attach the invoice PDF. The date, invoice number, client, product and quantity are read from it">Attach invoice</button><input type="file" id="ivFile" accept="application/pdf,.pdf" hidden>':'')+
     (t==='payments'?'<button class="btn" data-act="padv" title="A payment came against a PI. It is split across the PI\'s products automatically">Payment advice</button><button class="btn" data-act="stmt" title="Attach a bank statement (Excel or CSV) to record payments against invoices">Attach statement</button><input type="file" id="stmtFile" accept=".csv,.xlsx,.xls,text/csv" hidden>':'')+
     (t==='admin'&&CLOUD&&isAdmin()?'<button class="btn" data-act="cloudimport" title="Copy entries saved in this browser to the shared cloud">Upload this browser\'s data</button><button class="btn" data-act="cloudfile" title="Upload a backup file (.json) made with the Backup button of the old desk">Upload backup file</button><input type="file" id="cloudFile" accept="application/json,.json" hidden><button class="btn" data-act="mergeclients" title="Combine clients that were saved twice under slightly different names">Merge duplicate clients</button><button class="btn" data-act="removesheet" title="Remove every entry that was imported from the old Excel / Google Sheet">Remove old sheet data</button>':'')+
@@ -1574,6 +1582,7 @@ document.addEventListener('click',e=>{
   else if(act==='cxcheck'){piCancelled().then(async l=>{CXLIST=l;if(l.length){const np=await cxSweep();if(np){if(CLOUD)await cloudLoad();buildAll();toast('Removed '+np+' unused product'+(np===1?'':'s')+' left by cancelled PIs');return;}}buildPanel();});}
   else if(act==='cxremove'){const pi=CXLIST&&CXLIST[+a.dataset.i];if(pi&&isAdmin()){CXDECLINED.delete(piCo(pi.company)+'|'+norm(pi.pi_number));cancelledCleanup([pi]).then(n=>{toast(n?'Removed '+n+' entr'+(n===1?'y':'ies')+' of '+pi.pi_number:'Nothing removed');buildPanel();});}}
   else if(act==='advsplit'){S.form=null;asStart();}
+  else if(act==='lsplit'){S.form=null;lsStart();}
   else if(act==='ptedit'){if(isAdmin()){S.ptEdit=S.dashClient;renderDash();const t=$('#pt_txt');t&&t.focus();}}
   else if(act==='ptcancel'){S.ptEdit=null;renderDash();}
   else if(act==='ptsave'){const cl=D[S.co].clients.get(S.dashClient),A=$('#pt_adv'),Dd=$('#pt_disp'),Dy=$('#pt_days');if(isAdmin()&&cl&&A){const ad=+A.value,di=+Dd.value,dy=+Dy.value;if(ad+di>100){$('#pt_err').textContent='Advance and on dispatch together cannot be more than 100%.';return;}const n=Object.assign({},cl,{ptAdv:ad,ptDisp:di,ptDays:dy,payTermsBy:'admin'});n.payTerms=ptFmt(n);put('clients',n).then(ok=>{if(ok){S.ptEdit=null;buildAll();toast('Payment terms saved');}});}}
@@ -2015,7 +2024,7 @@ async function syncPI(manual){
         if(seen.has(akey))return;
         const have=[...D[k].advances.values()].some(a=>norm(a.po)===norm(pino)&&a.productId===p.id)||adds.some(a=>a.k===k&&norm(a.row.po)===norm(pino)&&a.row.productId===p.id);
         if(have){seen.add(akey);const pv=+it.advancePct;if(isFinite(pv)&&it.advancePct!==''&&it.advancePct!=null)D[k].advances.forEach(a=>{if(a.createdBy==='pi'&&norm(a.po)===norm(pino)&&a.productId===p.id&&(a.advPct==null||a.advPct==='')){a.advPct=pv;upd.push({k:k,a:a});}});return;}
-        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,advPct:(it.advancePct!=null&&it.advancePct!==''&&isFinite(+it.advancePct))?+it.advancePct:undefined,received:0,refPo:String(pi.ref_po||'').trim(),note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
+        adds.push({k:k,akey:akey,row:Object.assign({id:'pi_a_'+k+'_'+piSlug(pino)+'_'+ix,date:String(pi.pi_date||todayStr()).slice(0,10),productId:p.id,po:pino,poQty:qty,poRate:rate,advPct:(it.advancePct!=null&&it.advancePct!==''&&isFinite(+it.advancePct))?+it.advancePct:undefined,received:0,refPo:String(pi.ref_po||'').trim(),piType:String(pi.pi_type||'').trim()||undefined,note:'Auto-created from PI '+pino+'. Advance not received yet.'},stamp)});
       });
     });
     if(adds.length){
@@ -2398,6 +2407,8 @@ document.addEventListener('change',e=>{if(e.target&&e.target.id==='dash_client')
 /* ---------- open a PI in the PI Desk ---------- */
 const PI_SITE='https://pi-generator-theta.vercel.app';
 const PI_IDS=new Map();
+const typeOf=po=>(R&&R.typeMap&&R.typeMap.get(String(po||'').trim().toLowerCase()))||'';
+const typeBadge=po=>{const t=typeOf(po);return t?'<span class="tbadge'+(isPackType(t)?' pack':'')+'">'+esc(t)+'</span>':'<span class="dim">—</span>';};
 const refOf=po=>(R&&R.refMap&&R.refMap.get(String(po||'').trim().toLowerCase()))||'';
 const polink=po=>{po=String(po||'').trim();return po?'<button type="button" class="lnk polink" data-act="openpi" data-po="'+esc(po)+'" title="Open this PI in PI Desk">'+esc(po)+'</button>':'';};
 async function openPI(po){
@@ -2899,6 +2910,7 @@ function applyPiTerms(rows){
 /* Every PI with its notes / payment terms / reference PO. Needs od_pi_details (supabase-od-pi-details.sql); falls back to the PIs this login owns. */
 async function piDetails(){
   try{const r=await sbRest('POST','rpc/od_pi_details',{});if(Array.isArray(r))return r;}catch(e){}
+  try{return await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes,payment_terms,ref_po,cancelled_at,pi_type,items&limit=1000')||[];}catch(e0){}
   try{return await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes,payment_terms,ref_po,cancelled_at,items&limit=1000')||[];}
   catch(e){try{return await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes,items&limit=1000')||[];}catch(e2){try{return await sbRest('GET','pis?select=pi_number,company,buyer_name,buyer_gst,pi_date,created_at,notes&limit=1000')||[];}catch(e3){return [];}}}
 }
@@ -2910,6 +2922,7 @@ function applyPiChanges(rows){
     const name=String(pi.buyer_name||'').trim(),pino=String(pi.pi_number||'').trim();
     if(!name||!pino||pi.cancelled_at||CXSET.has(norm(pino)))return;
     const co=piCo(pi.company),d=D[co];if(!d)return;
+    {const ty=String(pi.pi_type||'').trim();if(ty)d.advances.forEach(a=>{if(norm(a.po)===norm(pino)&&a.piType!==ty){const n=Object.assign({},a,{piType:ty});d.advances.set(n.id,n);out.push({co:co,sec:'advances',row:n});}});}
     const cl=[...d.clients.values()].find(c=>norm(c.name)===norm(name)||(pi.buyer_gst&&c.gstin&&norm(c.gstin)===norm(pi.buyer_gst)));if(!cl)return;
     items(pi).forEach(it=>{
       const pn=String(it.product||'').replace(/\s+/g,' ').trim(),rate=+it.price,q=+it.qty,ap=(it.advancePct!=null&&it.advancePct!==''&&isFinite(+it.advancePct))?+it.advancePct:null;
@@ -3012,6 +3025,78 @@ document.addEventListener('submit',async e=>{
     if(await put('advances',{id:uid()+n,date:AS.date,productId:g.pid,po:g.po,poQty:g.poQty||(src&&+src.poQty)||0,poRate:g.poRate||(src&&+src.poRate)||0,received:x.share,refPo:(src&&src.refPo)||'',ref:AS.ref,note:'Advance for whole PI '+g.po+' · split by advance needed'+(AS.ref?' · '+AS.ref:'')+(AS.note?' · '+AS.note:'')}))n++;
   }
   AS=null;S.form=null;toast('Advance saved and divided across '+n+' product'+(n===1?'':'s'));buildPanel();
+});
+
+/* ---------- lump-sum advance for a PO with a container (packaging) PI and a product (FG) PI ---------- */
+let LS=null;
+const lumpKey=g=>(g.c?g.c.id:'')+'|'+norm(g.refPo||g.po);
+/* The PIs of a PO. Needs 2 or more PIs with at least one packaging-type PI and one other. */
+function lsPIs(key){
+  const m=new Map();
+  R.groups.forEach(g=>{if(!g.po||!g.pid||!g.hasAdv||!g.c||lumpKey(g)!==key)return;const k=norm(g.po);let o=m.get(k);if(!o){o={po:g.po,type:g.piType,pack:g.isPack,groups:[],req:0,recv:0,pend:0};m.set(k,o);}o.groups.push(g);o.recv+=g.received||0;});
+  m.forEach(o=>{o.req=o.groups.reduce((t,g)=>t+(g.required||0),0);o.pend=Math.max(0,o.req-o.recv);});
+  return [...m.values()].sort((a,b)=>(b.pack-a.pack)||String(a.po).localeCompare(String(b.po)));
+}
+function lsPOs(){
+  const m=new Map();
+  R.groups.forEach(g=>{if(!g.po||!g.pid||!g.hasAdv||!g.c||!clientShown(g.c))return;const k=lumpKey(g);if(!m.has(k))m.set(k,{key:k,client:g.c.name,ref:g.refPo||g.po});});
+  return [...m.values()].filter(x=>{const p=lsPIs(x.key);return p.length>=2&&p.some(y=>y.pack)&&p.some(y=>!y.pack);}).sort((a,b)=>String(a.client).localeCompare(String(b.client))||String(a.ref).localeCompare(String(b.ref)));
+}
+/* Container PI first (up to what it still needs), the rest to the product PIs by what each still needs (capped at that). Typed amounts win. Leftover stays unallocated. */
+function lsSplit(key,amount,ov){
+  const pis=lsPIs(key);let left=Math.round((+amount||0)*100);const sh=new Map();
+  pis.forEach(p=>{if(ov&&ov[norm(p.po)]!=null&&ov[norm(p.po)]!==''){const v=Math.round((+ov[norm(p.po)]||0)*100);sh.set(p,v);left-=v;}});
+  const free=pis.filter(p=>!sh.has(p));
+  free.filter(p=>p.pack).forEach(p=>{const v=Math.max(0,Math.min(left,Math.round(p.pend*100)));sh.set(p,v);left-=v;});
+  const fg=free.filter(p=>!p.pack);const wt=fg.reduce((t,p)=>t+Math.round(p.pend*100),0);const pool=Math.max(0,left);
+  fg.forEach(p=>{const w=Math.round(p.pend*100);const v=wt>0?Math.min(w,Math.floor(pool*w/wt)):0;sh.set(p,v);left-=v;});
+  /* paise left by rounding go to the first product PI that still needs more */
+  for(const p of fg){if(left<=0)break;const need=Math.round(p.pend*100)-sh.get(p);if(need>0){const v=Math.min(need,left);sh.set(p,sh.get(p)+v);left-=v;}}
+  return {rows:pis.map(p=>({p:p,share:(sh.get(p)||0)/100})),unalloc:left/100};
+}
+function lsStart(){LS={key:'',amt:'',date:todayStr(),ref:'',note:'',ov:{}};lsRender();const f=$('#lsf');f&&f.scrollIntoView&&f.scrollIntoView({block:'nearest'});}
+function lsRender(){
+  const pos=lsPOs();
+  $('#formHost').innerHTML='<form id="lsf" class="form" novalidate><h3>Lump-sum advance: container + product</h3><p class="muted">Use this when one payment came for a PO that has a container (packaging) PI and a product (FG) PI. The container PI is filled first; the rest goes to the product PI. You can change the amounts before saving. If the PO has only one PI, use Add advance received.</p>'+
+    (pos.length?'<div class="grid"><div class="f"><label for="ls_po">Client and PO *</label><select id="ls_po"><option value="">Choose the PO</option>'+pos.map(x=>'<option value="'+esc(x.key)+'"'+(x.key===LS.key?' selected':'')+'>'+esc(x.client+' · '+x.ref)+'</option>').join('')+'</select></div>'+
+    '<div class="f"><label for="ls_amt">Total received (₹) *</label><input id="ls_amt" type="number" min="0" step="any" inputmode="decimal" value="'+esc(LS.amt)+'"></div>'+
+    '<div class="f"><label for="ls_date">Date received *</label><input id="ls_date" type="date" value="'+esc(LS.date)+'"></div>'+
+    '<div class="f"><label for="ls_ref">Reference (UTR / cheque no.)</label><input id="ls_ref" autocomplete="off" value="'+esc(LS.ref)+'"></div>'+
+    '<div class="f"><label for="ls_note">Note</label><input id="ls_note" autocomplete="off" value="'+esc(LS.note)+'"></div></div><div id="ls_prev"></div>':'<p class="muted">No PO has both a container (Primary / Secondary Packaging) PI and another PI yet. Create the container PI and the FG PI against the same reference PO in PI Desk first.</p>')+
+    '<div class="fa"><button class="btn primary" type="submit"'+(pos.length?'':' disabled')+'>Save advance</button><button class="btn" type="button" data-act="cancel">Cancel</button><span id="ferr" class="ferr" role="alert"></span></div></form>';
+  lsPreview();
+}
+function lsPreview(){
+  const el=$('#ls_prev');if(!el||!LS)return;
+  if(!LS.key){el.innerHTML='<p class="muted">Choose the PO to see its PIs.</p>';return;}
+  const a=+LS.amt||0,sp=lsSplit(LS.key,a,LS.ov);
+  el.innerHTML='<div class="tw"><table class="tight"><thead><tr><th>PI</th><th>Type</th><th class="r">Needed</th><th class="r">Received so far</th><th class="r">This payment (₹)</th></tr></thead><tbody>'+
+    sp.rows.map(x=>'<tr><td class="mono">'+esc(x.p.po)+'</td><td>'+(x.p.pack?'<span class="tbadge pack">Container deposit</span>':'<span class="tbadge">'+esc(x.p.type||'Product')+'</span>')+'</td><td class="n">'+inr(x.p.req)+'</td><td class="n">'+inr(x.p.recv)+'</td><td class="n"><input class="lsw" type="number" min="0" step="any" data-lspi="'+esc(norm(x.p.po))+'" value="'+(a>0?x.share:'')+'"></td></tr>').join('')+
+    '</tbody><tfoot><tr><td colspan="4">Unallocated (stays with you, not recorded)</td><td class="n"><b id="ls_un">'+(a>0?inr(sp.unalloc):'—')+'</b></td></tr></tfoot></table></div><p class="muted">Container amount is the PI total with GST. The container deposit is never adjusted against product invoices.</p>';
+}
+document.addEventListener('input',e=>{const t=e.target;if(!LS||!t||!t.closest||!t.closest('#lsf'))return;
+  if(t.dataset&&t.dataset.lspi!==undefined){LS.ov[t.dataset.lspi]=t.value;const a=Math.round((+LS.amt||0)*100);const tot=[...document.querySelectorAll('#lsf [data-lspi]')].reduce((s,x)=>s+Math.round((+x.value||0)*100),0);const u=$('#ls_un');if(u)u.textContent=inr((a-tot)/100);return;}
+  const m={ls_amt:'amt',ls_date:'date',ls_ref:'ref',ls_note:'note'}[t.id];if(m){LS[m]=t.value;if(m==='amt'){LS.ov={};lsPreview();}}});
+document.addEventListener('change',e=>{const t=e.target;if(LS&&t&&t.id==='ls_po'){LS.key=t.value;LS.ov={};lsPreview();}});
+document.addEventListener('submit',async e=>{
+  if(!e.target||e.target.id!=='lsf')return;e.preventDefault();
+  const er=$('#ferr'),a=+LS.amt||0;
+  if(!LS.key){er.textContent='Choose the PO.';return;}
+  if(!(a>0)){er.textContent='Enter the amount received.';return;}
+  if(!LS.date){er.textContent='Enter the date received.';return;}
+  const sp=lsSplit(LS.key,a,LS.ov),tot=sp.rows.reduce((t,x)=>t+Math.round(x.share*100),0);
+  if(tot>Math.round(a*100)+1){er.textContent='The PI amounts add up to more than the amount received.';return;}
+  const rows=sp.rows.filter(x=>x.share>0);if(!rows.length){er.textContent='Nothing to record.';return;}
+  er.textContent='Saving…';let n=0;
+  for(const x of rows){
+    const gs=x.p.groups;let w=gs.map(g=>g.required||0),t=w.reduce((s,v)=>s+v,0);
+    if(!(t>0)){w=gs.map(g=>g.orderValue||0);t=w.reduce((s,v)=>s+v,0);}if(!(t>0)){w=gs.map(()=>1);t=gs.length;}
+    const A=Math.round(x.share*100);let used=0;
+    for(let i=0;i<gs.length;i++){const g=gs[i],sh=i===gs.length-1?A-used:Math.round(A*w[i]/t);used+=sh;if(sh<=0)continue;
+      const src=[...D[S.co].advances.values()].find(r=>r.productId===g.pid&&norm(r.po)===norm(g.po));
+      if(await put('advances',{id:uid()+n,date:LS.date,productId:g.pid,po:g.po,poQty:g.poQty||(src&&+src.poQty)||0,poRate:g.poRate||(src&&+src.poRate)||0,received:sh/100,refPo:(src&&src.refPo)||'',piType:g.piType||undefined,ref:LS.ref,note:(x.p.pack?'Container deposit':'Advance')+' from lump-sum '+inr(a)+' · PI '+g.po+(LS.ref?' · '+LS.ref:'')+(LS.note?' · '+LS.note:'')}))n++;}
+  }
+  LS=null;S.form=null;toast('Lump-sum saved: '+n+' advance entr'+(n===1?'y':'ies')+' recorded');buildPanel();
 });
 /* ---------- no double entries, one account per client ---------- */
 const cnorm=s=>String(s||'').toLowerCase().replace(/\bprivate\b/g,'pvt').replace(/\blimited\b/g,'ltd').replace(/[^a-z0-9]/g,'');
