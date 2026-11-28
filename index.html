@@ -1415,6 +1415,8 @@ const PREV={
     if(!iid){el.innerHTML='<span class="muted">Pick the invoice to see how much is still pending.</span>';return;}
     const res=sim('payments',{id:draftId(),invoiceId:iid,date:val('pm_date')||todayStr(),amount:a}),i=res.inv.find(x=>x.id===iid);
     if(!i)return;
+    const al=(S.form&&!S.form.id)?payAlloc(iid,a):[];
+    if(al.length>1){el.innerHTML=pv('Payment is more than this invoice','It will be split by due date, earliest first')+al.map(x=>pv(esc(x.inv.invNo)+' · due '+fd(x.inv.due),inr(x.amt)+(x.amt>x.inv.pend+TOL?' (extra '+inr(x.amt-x.inv.pend)+' stays as non-adjusted balance)':''))).join('');return;}
     el.innerHTML=pv('Amount due on invoice',inr(i.net))+pv('Received incl. this payment',inr(i.paid))+pv('Still pending',inr(i.pend))+(i.paid>i.net+TOL?pv('Warning','More than the invoice amount'):'')+pv('Due date',fd(i.due));
   },
   dispatches:()=>{
@@ -1512,11 +1514,26 @@ function readForm(sec){
   if(!(num('d_qty')>0))return {err:'Enter the quantity dispatched.'};
   return {row:{id:id,date:val('d_date'),productId:pid,po:po,qty:num('d_qty'),invNo:val('d_inv'),transporter:val('d_trans'),lr:val('d_lr'),status:val('d_status')||'Dispatched'}};
 }
+/* One payment bigger than the chosen invoice: spread over that client's open invoices, the one due first gets paid first.
+   Whatever is left after every open invoice is paid goes on the last one, and shows as non-adjusted balance. */
+function payAlloc(iid,amount){
+  const sel=R.inv.find(x=>x.id===iid);if(!sel||!sel.c||!(amount>sel.pend+TOL))return [];
+  const open=R.inv.filter(x=>x.c&&x.c.id===sel.c.id&&x.pend>TOL).sort((a,b)=>(a.due?0:1)-(b.due?0:1)||String(a.due||'').localeCompare(String(b.due||''))||String(a.date||'').localeCompare(String(b.date||''))||String(a.invNo).localeCompare(String(b.invNo)));
+  if(open.length<2)return [];
+  const rows=[];let left=Math.round(amount*100);
+  open.forEach((i,k)=>{if(left<=0)return;const need=Math.round(i.pend*100),part=k===open.length-1?left:Math.min(left,need);if(part>0){rows.push({inv:i,amt:part/100});left-=part;}});
+  return rows;
+}
 async function onSubmit(e){
   e.preventDefault();
   const sec=S.form.sec,res=readForm(sec),er=$('#ferr');
   if(res.err){er.textContent=res.err;return;}
   er.textContent='';
+  if(sec==='payments'&&!S.form.id){
+    const al=payAlloc(res.row.invoiceId,res.row.amount);
+    if(al.length>1){let n=0;for(const x of al){if(await put('payments',Object.assign({},res.row,{id:uid()+n,invoiceId:x.inv.id,amount:x.amt,note:('Split from '+inr(res.row.amount)+' by due date'+(res.row.note?' · '+res.row.note:''))})))n++;}
+      toast('Payment split over '+n+' invoices, earliest due first');S.form=null;buildPanel();return;}
+  }
   if(await put(sec,res.row)){toast('Saved');S.form=null;buildPanel();}
 }
 
@@ -2163,7 +2180,9 @@ function matchStatement(items){
       }
     }
     if(on&&po&&!seen.has(it.key)){const k=norm(po.po);if(taken.has(k)){on=false;how='Already matched by another credit'}else taken.add(k);}
-    return Object.assign({},it,{po:po?norm(po.po):'',how:how,client:client,dup:seen.has(it.key),on:on&&!seen.has(it.key)});
+    let pdup=false;
+    if(po&&!seen.has(it.key)&&paymentTaken(it,[po.po])){pdup=true;how='Already recorded as invoice payment';}
+    return Object.assign({},it,{po:po?norm(po.po):'',how:how,client:client,dup:seen.has(it.key)||pdup,on:on&&!seen.has(it.key)&&!pdup});
   });
 }
 function renderStmt(){
@@ -2198,7 +2217,7 @@ async function loadStatement(file){
   }catch(e){toast((e&&e.message)||'Could not read the statement');}
 }
 /* ---------- Bank statement against invoices (Payment Status) ---------- */
-const openInvs=()=>R.inv.filter(i=>i.pend>TOL&&i.c).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.invNo).localeCompare(String(b.invNo)));
+const openInvs=()=>R.inv.filter(i=>i.pend>TOL&&i.c).sort((a,b)=>(a.due?0:1)-(b.due?0:1)||String(a.due||'').localeCompare(String(b.due||''))||String(a.date||'').localeCompare(String(b.date||''))||String(a.invNo).localeCompare(String(b.invNo)));
 function payTargets(tgt){
   const all=openInvs();if(!tgt)return [];
   const k=tgt.slice(2);
@@ -2206,6 +2225,17 @@ function payTargets(tgt){
   if(tgt[0]==='p')return all.filter(x=>norm(x.po)===k);
   if(tgt[0]==='c')return all.filter(x=>x.c.id===k);
   return [];
+}
+/* Same money already entered by hand (no statement key): same amount, a date within 2 days, same PI. Used both ways so a statement is never counted as advance and as invoice payment. */
+const dayGap=(a,b)=>Math.abs((new Date(a)-new Date(b))/864e5);
+function advanceTaken(it,pos){
+  const P=new Set(pos.map(norm));if(!P.size)return false;
+  return [...D[S.co].advances.values()].some(a=>P.has(norm(a.po))&&Math.abs((+a.received||0)-it.amt)<0.01&&a.date&&dayGap(a.date,it.date)<=2);
+}
+function paymentTaken(it,pos){
+  const P=new Set(pos.map(norm));if(!P.size)return false;
+  const inv=new Map([...D[S.co].invoices.values()].map(i=>[i.id,i]));
+  return [...D[S.co].payments.values()].some(p=>{const i=inv.get(p.invoiceId);return i&&P.has(norm(i.po))&&Math.abs((+p.amount||0)-it.amt)<0.01&&p.date&&dayGap(p.date,it.date)<=2;});
 }
 function matchStatementPay(items){
   const inv=openInvs(),seen=stmtSeen(),taken=new Set();
@@ -2224,19 +2254,21 @@ function matchStatementPay(items){
           const c=cl.find(x=>x.client===cn[0]),mine=inv.filter(x=>x.c.id===c.id);
           const ex=mine.filter(x=>Math.abs(x.pend-it.amt)<=1);
           if(ex.length===1){tgt='i:'+ex[0].id;how='Client + amount';on=true;}
-          else{tgt='c:'+c.id;how='Client matched, oldest invoice first';}
+          else{tgt='c:'+c.id;how='Client matched, earliest due invoice first';}
         }
       }
     }
     if(on&&tgt&&!seen.has(it.key)){if(taken.has(tgt)){on=false;how='Already matched by another credit';}else taken.add(tgt);}
-    return Object.assign({},it,{tgt:tgt,how:how,dup:seen.has(it.key),on:on&&!seen.has(it.key)});
+    let adup=false;
+    if(tgt&&!seen.has(it.key)){const t=payTargets(tgt),pos=tgt[0]==='p'?[tgt.slice(2)]:(tgt[0]==='i'?t.slice(0,1).map(x=>x.po):[...new Set(t.map(x=>x.po))]);if(advanceTaken(it,pos)){adup=true;how='Already recorded as advance';}}
+    return Object.assign({},it,{tgt:tgt,how:how,dup:seen.has(it.key)||adup,on:on&&!seen.has(it.key)&&!adup});
   });
 }
 function renderStmtPay(){
   const fh=$('#formHost');if(!STMT)return;
   const inv=openInvs();
   const byC=new Map();inv.forEach(i=>{if(!byC.has(i.c.id))byC.set(i.c.id,{c:i.c,l:[]});byC.get(i.c.id).l.push(i);});
-  const optHtml=sel=>'<option value="">Not matched</option>'+[...byC.values()].sort((a,b)=>byName(a.c,b.c)).map(g=>'<optgroup label="'+esc(g.c.name)+'"><option value="c:'+esc(g.c.id)+'"'+(sel==='c:'+g.c.id?' selected':'')+'>All open invoices, oldest first</option>'+g.l.map(i=>'<option value="i:'+esc(i.id)+'"'+(sel==='i:'+i.id?' selected':'')+'>'+esc(i.invNo)+' · pending '+inr(i.pend)+'</option>').join('')+'</optgroup>').join('');
+  const optHtml=sel=>'<option value="">Not matched</option>'+[...byC.values()].sort((a,b)=>byName(a.c,b.c)).map(g=>'<optgroup label="'+esc(g.c.name)+'"><option value="c:'+esc(g.c.id)+'"'+(sel==='c:'+g.c.id?' selected':'')+'>All open invoices, earliest due first</option>'+g.l.map(i=>'<option value="i:'+esc(i.id)+'"'+(sel==='i:'+i.id?' selected':'')+'>'+esc(i.invNo)+' · pending '+inr(i.pend)+'</option>').join('')+'</optgroup>').join('');
   const nUn=STMT.rows.filter(r=>!r.tgt&&!r.dup).length;
   const vis=STMT.rows.map((r,i)=>({r:r,i:i})).filter(x=>STMT.all||x.r.tgt||x.r.dup);
   const body=vis.map(x=>{const r=x.r,i=x.i,t=payTargets(r.tgt),tot=t.reduce((a,b)=>a+b.pend,0);
@@ -2326,6 +2358,29 @@ const DI={
   go:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'
 };
 const ini=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+/* Non-adjusted balance: money received above what was asked, on advances (above the advance required) and on invoices (above the net receivable). */
+function nbItems(cid){
+  const out=[],ok=c=>c&&clientShown(c)&&(!cid||c.id===cid),lst=a=>a.map(x=>fd(x.date)+' '+inr(x.amt)+(x.ref?' ('+x.ref+')':'')).join(' · ');
+  R.groups.forEach(g=>{
+    if(!ok(g.c)||!(g.excess>TOL))return;
+    const es=[...D[S.co].advances.values()].filter(a=>a.productId===g.pid&&norm(a.po)===norm(g.po)&&(+a.received||0)>0).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))).map(a=>({date:a.date,amt:+a.received||0,ref:a.ref||''}));
+    out.push({type:'Advance',client:g.c.name,po:g.po,what:g.p?g.p.name:'',need:g.required,got:g.received,extra:g.excess,det:lst(es)});
+  });
+  R.inv.forEach(i=>{
+    if(!ok(i.c)||!(i.paid>i.net+TOL))return;
+    const ps=R.pay.filter(x=>x.invoiceId===i.id).map(x=>({date:x.date,amt:x.amt,ref:x.ref||''}));
+    out.push({type:'Invoice',client:i.c.name,po:i.po,what:'Invoice '+i.invNo,need:i.net,got:i.paid,extra:i.paid-i.net,det:lst(ps)+(i.legacyPaid?(ps.length?' · ':'')+'Earlier payment '+inr(i.legacyPaid):'')});
+  });
+  return out.sort((a,b)=>b.extra-a.extra);
+}
+function nbCardHTML(cid){
+  const it=nbItems(cid),tot=it.reduce((a,x)=>a+x.extra,0),ta=it.filter(x=>x.type==='Advance').reduce((a,x)=>a+x.extra,0);
+  const body=it.length?'<div class="sumline"><div><span>Total non-adjusted balance</span><b>'+inr(tot)+'</b></div><div><span>On advances</span><b>'+inr(ta)+'</b></div><div><span>On invoices</span><b>'+inr(tot-ta)+'</b></div></div>'+
+    '<div class="tw"><table class="tight"><thead><tr><th>Type</th>'+(cid?'':'<th>Client</th>')+'<th>PI / PO</th><th>Against</th><th class="r">Needed</th><th class="r">Received</th><th class="r">Extra</th><th>Payments</th></tr></thead><tbody>'+
+    it.map(x=>'<tr><td>'+x.type+'</td>'+(cid?'':'<td>'+esc(x.client)+'</td>')+'<td class="mono">'+esc(x.po)+'</td><td>'+esc(x.what)+'</td><td class="n">'+inr(x.need)+'</td><td class="n">'+inr(x.got)+'</td><td class="n"><b>'+inr(x.extra)+'</b></td><td class="wrapc">'+esc(x.det||'—')+'</td></tr>').join('')+'</tbody></table></div>'
+    :'<div class="empty"><h3>Nothing extra</h3><p class="muted">No advance or invoice has received more than was asked.</p></div>';
+  return '<section class="dcard wide" id="nbcard"><div class="dh"><h3>Non-adjusted balance'+(it.length?'<span class="cnt">'+it.length+'</span>':'')+'</h3></div><p class="dsub">Money received above what was asked. It is not adjusted against any invoice yet, so keep it for the next invoice or refund it.</p>'+body+'</section>';
+}
 function renderDash(){
   const host=$('#dashHost');if(!host)return;
   const cid=S.dashClient&&D[S.co].clients.has(S.dashClient)?S.dashClient:'';S.dashClient=cid;
@@ -2343,6 +2398,7 @@ function renderDash(){
   const tile=(cls,ic,l,v,s)=>'<div class="dt '+cls+'"><div class="ic" aria-hidden="true">'+DI[ic]+'</div><div><div class="l">'+l+'</div><div class="v">'+esc(v)+'</div><div class="s">'+esc(s)+'</div></div></div>';
   h+='<section class="dtiles" aria-label="Summary">'+tile('t-ok','money','Payments received',inr(X.received),col+'% of order value (with GST)')+tile('t-warn','clock','Outstanding on invoices',inr(X.outstanding),nOpen+' open invoice'+(nOpen===1?'':'s'))+
     tile(X.overdue>TOL?'t-bad':'','alert','Overdue',inr(X.overdue),nOver+' invoice'+(nOver===1?'':'s')+' past due date')+tile('t-ind','truck','Yet to dispatch',qty(X.toShip)+' units','on invoiced POs')+'</section>';
+    h+=nbCardHTML(cid);
   /* clients overview (all clients view) */
   if(!cid){
     const rows=X.clients.map(k=>({k:k,d:dashData(k.id)}));
